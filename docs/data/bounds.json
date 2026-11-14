@@ -61,7 +61,7 @@
  },
  {
   "N": 7,
-  "lower": 72,
+  "lower": 73,
   "upper": 78,
   "exact": false,
   "general": 68,
@@ -73,7 +73,7 @@
  },
  {
   "N": 8,
-  "lower": 91,
+  "lower": 92,
   "upper": 106,
   "exact": false,
   "general": 90,

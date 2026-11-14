@@ -230,6 +230,122 @@ fn jlb(s: &State, n: usize) -> u32 {
     }
     // pm[i]: レーン i の全部の表に出てくる色。残りのレーンに出てこない色を家に足しても、費用も「残せるか」も変わらない
     // （底の色 c0 のレーンが残っていれば c0 は表に出る）ので、足す色の候補から外す（最小値は変わらない）。
+    // 同じ形のレーンは入れ替えても値が同じなので、形ごとに「何本片付けたか」だけを持つ（gc[g] 本のうち、混合基数 gm[g] の桁）。
+    struct Gr<'a> { its: &'a [It], gc: &'a [usize], gm: &'a [usize], pm: &'a [u32], done: usize }
+    fn go(code: usize, o: u32, n: usize, colors: u32, gr: &Gr, memo: &mut Memo) -> u32 {
+        if code == gr.done { return 0; }
+        let (its, pm) = (gr.its, gr.pm);
+        let d = its.len();
+        let key = (code << (n + 1)) | o as usize;
+        if memo.stamp[key] == memo.ep { return memo.val[key] as u32; }
+        let mut best = u32::MAX;
+        for i in 0..d {
+            if code / gr.gm[i] % (gr.gc[i] + 1) == gr.gc[i] { continue; }
+            let (c0, nk, ref keep, nf, ref full, cankeep) = its[i];
+            let nm = code + gr.gm[i];
+            if cankeep && o >> c0 & 1 == 0 {
+                let v = nk as u32 + cost(keep, o, n) + go(nm, o | 1 << c0, n, colors, gr, memo);
+                if v < best { best = v; }
+            }
+            let fc = nf as u32 + cost(full, o, n);
+            if fc >= best { continue; }
+            let v = fc + go(nm, o, n, colors, gr, memo);
+            if v < best { best = v; }
+            let mut present = 0u32;
+            for j in 0..d { if nm / gr.gm[j] % (gr.gc[j] + 1) < gr.gc[j] { present |= pm[j]; } }
+            let mut rest = colors & !o & present;
+            while rest != 0 {
+                let c = rest.trailing_zeros();
+                rest &= rest - 1;
+                let v = fc + go(nm, o | 1 << c, n, colors, gr, memo);
+                if v < best { best = v; }
+            }
+        }
+        memo.stamp[key] = memo.ep;
+        memo.val[key] = best.min(254) as u8;
+        best
+    }
+    thread_local! { static JBUF: std::cell::RefCell<(Vec<u32>, Vec<u8>, u32)> = std::cell::RefCell::new((Vec::new(), Vec::new(), 0)); }
+    JBUF.with(|cell| {
+        let mut guard = cell.borrow_mut();
+        let (stamp, val, epoch) = &mut *guard;
+        let mut best = u32::MAX;
+        let nu = uni.len();
+        for kset in 0usize..(1 << nu) {
+            let mut k0 = 0u32;
+            let mut ok = true;
+            let mut its = items.clone();
+            for (i, &(u, len)) in uni.iter().enumerate() {
+                if kset >> i & 1 == 1 {
+                    if k0 >> u & 1 == 1 { ok = false; break; }
+                    k0 |= 1 << u;
+                } else {
+                    let mut full = [0u8; 16];
+                    full[u as usize] = len;
+                    its.push((u, 0, [0u8; 16], len, full, false));
+                }
+            }
+            if !ok { continue; }
+            its.sort_unstable();
+            let mut gi: Vec<It> = Vec::new();
+            let mut gc: Vec<usize> = Vec::new();
+            for it in its { if gi.last() == Some(&it) { *gc.last_mut().unwrap() += 1; } else { gi.push(it); gc.push(1); } }
+            let mut gm = Vec::with_capacity(gi.len());
+            let mut tot = 1usize;
+            for &c in &gc { gm.push(tot); tot *= c + 1; }
+            let its = gi;
+            let size = tot << (n + 1);
+            if stamp.len() < size { stamp.resize(size, 0); val.resize(size, 0); }
+            *epoch = epoch.wrapping_add(1);
+            if *epoch == 0 { stamp.iter_mut().for_each(|x| *x = 0); *epoch = 1; }
+            let mut memo = Memo { stamp: &mut *stamp, val: &mut *val, ep: *epoch };
+            let pm: Vec<u32> = its.iter().map(|it| { let mut m = 0u32; for k in 1..=n { if it.4[k] > 0 { m |= 1 << k; } } m }).collect();
+            // 空レーンの家: k0 に無い色から 0〜e 色（どのレーンにも出てこない色は足しても同じなので外す）
+            let free = colors & !k0 & pm.iter().fold(0, |a, &m| a | m);
+            let gr = Gr { its: &its, gc: &gc, gm: &gm, pm: &pm, done: tot - 1 };
+            let mut sub = free;
+            loop {
+                if (sub.count_ones() as usize) <= e {
+                    let v = go(0, k0 | sub, n, colors, &gr, &mut memo);
+                    if v < best { best = v; }
+                }
+                if sub == 0 { break; }
+                sub = (sub - 1) & free;
+            }
+        }
+        best
+    })
+}
+/// 以前の J（レーンを 1 本ずつ区別する版）。jtime で新しい版と値を突き合わせる用。
+#[allow(dead_code)]
+fn jlb_ref(s: &State, n: usize) -> u32 {
+    // (底の色, 残すときの動く数, 残すときの表, 全部出すときの数, 全部の表, 残せるか)
+    type It = (u8, u8, [u8; 16], u8, [u8; 16], bool);
+    let mut e = 0usize;
+    let mut items: Vec<It> = Vec::new();
+    let mut uni: Vec<(u8, u8)> = Vec::new();
+    for &l in &s[..=n] {
+        let ht = height(l);
+        if ht == 0 { e += 1; continue; }
+        let c0 = ball(l, 0);
+        let mut r = 1;
+        while r < ht && ball(l, r) == c0 { r += 1; }
+        if r == ht { uni.push((c0, ht as u8)); continue; }
+        let mut keep = [0u8; 16];
+        for k in r..ht { keep[ball(l, k) as usize] += 1; }
+        let mut full = keep;
+        full[c0 as usize] += r as u8;
+        items.push((c0, (ht - r) as u8, keep, ht as u8, full, true));
+    }
+    let colors: u32 = ((1u32 << (n + 1)) - 1) & !1;
+    struct Memo<'a> { stamp: &'a mut Vec<u32>, val: &'a mut Vec<u8>, ep: u32 }
+    fn cost(cnt: &[u8; 16], o: u32, n: usize) -> u32 {
+        let mut c = 0u32;
+        for k in 1..=n { if o >> k & 1 == 0 { c += cnt[k] as u32; } }
+        c
+    }
+    // pm[i]: レーン i の全部の表に出てくる色。残りのレーンに出てこない色を家に足しても、費用も「残せるか」も変わらない
+    // （底の色 c0 のレーンが残っていれば c0 は表に出る）ので、足す色の候補から外す（最小値は変わらない）。
     fn go(mask: usize, o: u32, n: usize, colors: u32, its: &[It], pm: &[u32], memo: &mut Memo) -> u32 {
         let d = its.len();
         if mask == (1 << d) - 1 { return 0; }
@@ -262,8 +378,8 @@ fn jlb(s: &State, n: usize) -> u32 {
         memo.val[key] = best.min(254) as u8;
         best
     }
-    thread_local! { static JBUF: std::cell::RefCell<(Vec<u32>, Vec<u8>, u32)> = std::cell::RefCell::new((Vec::new(), Vec::new(), 0)); }
-    JBUF.with(|cell| {
+    thread_local! { static JBUF0: std::cell::RefCell<(Vec<u32>, Vec<u8>, u32)> = std::cell::RefCell::new((Vec::new(), Vec::new(), 0)); }
+    JBUF0.with(|cell| {
         let mut guard = cell.borrow_mut();
         let (stamp, val, epoch) = &mut *guard;
         let mut best = u32::MAX;
@@ -1017,6 +1133,26 @@ fn main() {
         "jbeam" => jbeam(n, a[3].parse().unwrap(), a.get(4).map(|x| x.parse().unwrap()).unwrap_or(6)),
         "ropt" => { let st = parse_state(n, &a[3..]); println!("start {}", show(&st, n)); println!("ropt = {}", ropt(n, st)); }
         "opt" => { let st = parse_state(n, &a[3..]); println!("start {}", show(&st, n)); let g = opt(n, st, false); println!("opt = {g}"); }
+        "jcmp" => {
+            // 乱歩の各局面で、形をまとめた J と以前の J が一致するかを数える
+            let cnt: usize = a[3].parse().unwrap();
+            let mut seed = 987654321u64 + n as u64;
+            let (mut same, mut diff) = (0u64, 0u64);
+            for _ in 0..cnt {
+                let mut s = initial(n);
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                let len = (seed >> 33) as usize % (n * n * 2);
+                for _ in 0..len {
+                    let mut buf = Vec::new();
+                    neighbors(&s, n, &mut buf);
+                    seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                    s = buf[(seed >> 33) as usize % buf.len()];
+                }
+                let c = canon(&s, n + 1);
+                if jlb(&c, n) == jlb_ref(&c, n) { same += 1 } else { diff += 1; println!("不一致 {}", show(&c, n)); }
+            }
+            println!("N={n} 一致 {same} 不一致 {diff}");
+        }
         "jtime" => {
             // 初期状態から決まった乱数で歩いた状態で J の計算時間を測る
             let mut s = initial(n);
@@ -1026,7 +1162,10 @@ fn main() {
                 if k % (steps / 5).max(1) == 0 {
                     let t = std::time::Instant::now();
                     let v = jlb(&canon(&s, n + 1), n);
-                    println!("step={k} J={v} h+D={} {:.3}s", lb(&canon(&s, n + 1), n), t.elapsed().as_secs_f64());
+                    let dt = t.elapsed().as_secs_f64();
+                    let t2 = std::time::Instant::now();
+                    let r = if std::env::var("JREF").is_ok() { jlb_ref(&canon(&s, n + 1), n) } else { v };
+                    println!("step={k} J={v} ref={r}{} h+D={} {:.3}s (ref {:.3}s)", if r != v { " 不一致" } else { "" }, lb(&canon(&s, n + 1), n), dt, t2.elapsed().as_secs_f64());
                 }
                 let mut buf = Vec::new();
                 neighbors(&s, n, &mut buf);

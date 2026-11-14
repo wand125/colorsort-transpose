@@ -4,8 +4,8 @@ N	lower	lower_basis	upper	upper_source	solution
 4	21	全探索で確定（BFS/IDA*）	21	全探索で確定	solutions/best.tsv
 5	36	全探索で確定（BFS/IDA*）	36	全探索で確定	solutions/best.tsv
 6	55	枝刈り全探索 prove 6 55（下界 J、471 万状態）で確定	55	自作: r1r2（確定）	solutions/best.tsv
-7	72	枝刈り全探索 prove 7 72（下界 J、80 万状態）	78	自作: colorsort3 window=6	solutions/best.tsv
-8	91	枝刈り全探索 prove 8 91（下界 J、3,925 状態）	106	既知: Docs 付録 A（既知、未確定）	solutions/docs_known.tsv
+7	73	枝刈り全探索 prove 7 73（下界 J、675 万状態）	78	自作: colorsort3 window=6	solutions/best.tsv
+8	92	枝刈り全探索 prove 8 92（下界 J、33,108 状態）	106	既知: Docs 付録 A（既知、未確定）	solutions/docs_known.tsv
 9	115	h+D の一般式 (3N²−N−4)/2	141	自作: N9 w1000000 	solutions/best.tsv
 10	143	h+D の一般式 (3N²−N−4)/2	180	自作: 解き直し（t=40、幅 3e5）	solutions/best.tsv
 11	174	h+D の一般式 (3N²−N−4)/2	229	自作: 反復解き直し（幅 3e5）	solutions/best.tsv
