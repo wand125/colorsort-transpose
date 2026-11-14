@@ -12,7 +12,9 @@
 """
 import os, sys
 
-VAR = os.environ.get("HV", "")  # 改善案の切り替え（B: 注ぐ候補を避ける、C: 掘るレーンの選び方）
+VAR = os.environ.get("HV", "")
+LOOK = int(os.environ.get("HVLOOK", "2"))
+upcoming = []  # これから集める色（集める順）。solve の中で更新する  # 改善案の切り替え（B: 注ぐ候補を避ける、C: 掘るレーンの選び方）
 
 D = "0123456789abcdefghijklmnopqrstuvwxyz"
 
@@ -45,6 +47,14 @@ def solve(n, verbose=False, prefix_only=False):
             pen = 0
             if "B" in VAR and len(L[b]) >= k2 and L[b][:k2] == list(range(1, k2 + 1)):
                 pen = 1  # 注ぎ合わせの候補は汚さない
+            # HV=L: 置くと埋まる玉のうち、近いうちに集める色の数を罰にする（次に掘るレーンを埋めない）
+            if "L" in VAR and t != v:
+                soon = upcoming[:LOOK]
+                bury = sum(1 for x in L[b] if x in soon)
+                key = (1, bury, 0 if t > v else 1, -t, -(n - len(L[b])))
+                if best is None or key < best[0]:
+                    best = (key, b)
+                continue
             # 同じ色の上 > 大きい色の上（大きいほど良い）> それ以外。空きが多い方を少し優先
             if t == v:
                 key = (0, pen, 0, -(n - len(L[b])))
@@ -130,6 +140,7 @@ def solve(n, verbose=False, prefix_only=False):
     frozen.add(0)
     # 2. 上半分
     for c in range(n - 1, k1, -1):
+        upcoming[:] = list(range(c - 1, k1, -1))
         E = empty_lane()
         if E is None:
             pour_step()

@@ -1,0 +1,5 @@
+N=6 width=10000 moves=55 verified=true 19.8s
+N=6 width=100000 moves=55 verified=true 236.8s
+N=7 width=10000 moves=81 verified=true 80.5s
+N=7 width=100000 moves=79 verified=true 812.5s
+N=8 width=10000: 400 手で届かず

@@ -228,7 +228,9 @@ fn jlb(s: &State, n: usize) -> u32 {
         for k in 1..=n { if o >> k & 1 == 0 { c += cnt[k] as u32; } }
         c
     }
-    fn go(mask: usize, o: u32, n: usize, colors: u32, its: &[It], memo: &mut Memo) -> u32 {
+    // pm[i]: レーン i の全部の表に出てくる色。残りのレーンに出てこない色を家に足しても、費用も「残せるか」も変わらない
+    // （底の色 c0 のレーンが残っていれば c0 は表に出る）ので、足す色の候補から外す（最小値は変わらない）。
+    fn go(mask: usize, o: u32, n: usize, colors: u32, its: &[It], pm: &[u32], memo: &mut Memo) -> u32 {
         let d = its.len();
         if mask == (1 << d) - 1 { return 0; }
         let key = (mask << (n + 1)) | o as usize;
@@ -239,18 +241,20 @@ fn jlb(s: &State, n: usize) -> u32 {
             let (c0, nk, ref keep, nf, ref full, cankeep) = its[i];
             let nm = mask | 1 << i;
             if cankeep && o >> c0 & 1 == 0 {
-                let v = nk as u32 + cost(keep, o, n) + go(nm, o | 1 << c0, n, colors, its, memo);
+                let v = nk as u32 + cost(keep, o, n) + go(nm, o | 1 << c0, n, colors, its, pm, memo);
                 if v < best { best = v; }
             }
             let fc = nf as u32 + cost(full, o, n);
             if fc >= best { continue; }
-            let v = fc + go(nm, o, n, colors, its, memo);
+            let v = fc + go(nm, o, n, colors, its, pm, memo);
             if v < best { best = v; }
-            let mut rest = colors & !o;
+            let mut present = 0u32;
+            for j in 0..d { if nm >> j & 1 == 0 { present |= pm[j]; } }
+            let mut rest = colors & !o & present;
             while rest != 0 {
                 let c = rest.trailing_zeros();
                 rest &= rest - 1;
-                let v = fc + go(nm, o | 1 << c, n, colors, its, memo);
+                let v = fc + go(nm, o | 1 << c, n, colors, its, pm, memo);
                 if v < best { best = v; }
             }
         }
@@ -284,12 +288,13 @@ fn jlb(s: &State, n: usize) -> u32 {
             *epoch = epoch.wrapping_add(1);
             if *epoch == 0 { stamp.iter_mut().for_each(|x| *x = 0); *epoch = 1; }
             let mut memo = Memo { stamp: &mut *stamp, val: &mut *val, ep: *epoch };
-            // 空レーンの家: k0 に無い色から 0〜e 色
-            let free = colors & !k0;
+            let pm: Vec<u32> = its.iter().map(|it| { let mut m = 0u32; for k in 1..=n { if it.4[k] > 0 { m |= 1 << k; } } m }).collect();
+            // 空レーンの家: k0 に無い色から 0〜e 色（どのレーンにも出てこない色は足しても同じなので外す）
+            let free = colors & !k0 & pm.iter().fold(0, |a, &m| a | m);
             let mut sub = free;
             loop {
                 if (sub.count_ones() as usize) <= e {
-                    let v = go(0, k0 | sub, n, colors, &its, &mut memo);
+                    let v = go(0, k0 | sub, n, colors, &its, &pm, &mut memo);
                     if v < best { best = v; }
                 }
                 if sub == 0 { break; }
@@ -323,6 +328,82 @@ fn jlb_cached(s: &State, n: usize) -> u32 {
         m.insert(key, v.min(255) as u8);
         v
     })
+}
+/// J の近似（ビーム用。許容性は要らない）。色の家の集合 O を表に持たず、レーンの集合 mask だけの DP にする。
+/// 各 mask では費用最小の道の O だけを持ち、「全部出す」で足す色は、残りのレーンに最も多く残っている色を貪欲に選ぶ。
+/// 最初の O: 単色レーンは色ごとに 1 本（一番高いもの）を残し、空レーン e 本ぶんは汚れたレーンに多い色から選ぶ。
+fn japprox(s: &State, n: usize) -> u32 {
+    type It = (u8, u8, [u8; 16], u8, [u8; 16], bool);
+    let mut e = 0usize;
+    let mut its: Vec<It> = Vec::new();
+    let mut uni: Vec<(u8, u8)> = Vec::new();
+    for &l in &s[..=n] {
+        let ht = height(l);
+        if ht == 0 { e += 1; continue; }
+        let c0 = ball(l, 0);
+        let mut r = 1;
+        while r < ht && ball(l, r) == c0 { r += 1; }
+        if r == ht { uni.push((c0, ht as u8)); continue; }
+        let mut keep = [0u8; 16];
+        for k in r..ht { keep[ball(l, k) as usize] += 1; }
+        let mut full = keep;
+        full[c0 as usize] += r as u8;
+        its.push((c0, (ht - r) as u8, keep, ht as u8, full, true));
+    }
+    // 単色レーン: 色ごとに一番高い 1 本を残し、ほかは順番に片付ける対象に
+    uni.sort_unstable_by(|a, b| (a.0, std::cmp::Reverse(a.1)).cmp(&(b.0, std::cmp::Reverse(b.1))));
+    let mut o0 = 0u32;
+    for &(u, len) in &uni {
+        if o0 >> u & 1 == 0 { o0 |= 1 << u; } else {
+            let mut full = [0u8; 16];
+            full[u as usize] = len;
+            its.push((u, 0, [0u8; 16], len, full, false));
+        }
+    }
+    let d = its.len();
+    if d == 0 { return 0; }
+    let mut tot = [0u32; 16];
+    for it in &its { for c in 1..=n { tot[c] += it.4[c] as u32; } }
+    // 空レーンの家: 汚れたレーンに多い色から e 色（底の色として「残す」に使えそうな色は後回し）
+    let mut cand: Vec<usize> = (1..=n).filter(|&c| o0 >> c & 1 == 0 && tot[c] > 0).collect();
+    cand.sort_unstable_by_key(|&c| std::cmp::Reverse(tot[c]));
+    for &c in cand.iter().take(e) { o0 |= 1 << c; }
+    let cost = |cnt: &[u8; 16], o: u32| -> u32 { let mut x = 0; for k in 1..=n { if o >> k & 1 == 0 { x += cnt[k] as u32; } } x };
+    let full_mask = (1usize << d) - 1;
+    let mut best: Vec<(u32, u32)> = vec![(u32::MAX, 0); 1 << d];
+    best[0] = (0, o0);
+    for mask in 0..full_mask {
+        let (c, o) = best[mask];
+        if c == u32::MAX { continue; }
+        // 残りのレーンにある色の個数（足す色の選択用）
+        let mut rem = [0u32; 16];
+        for i in 0..d { if mask >> i & 1 == 0 { for k in 1..=n { rem[k] += its[i].4[k] as u32; } } }
+        for i in 0..d {
+            if mask >> i & 1 == 1 { continue; }
+            let (c0, nk, ref keep, nf, ref full, cankeep) = its[i];
+            let nm = mask | 1 << i;
+            if cankeep && o >> c0 & 1 == 0 {
+                let v = c + nk as u32 + cost(keep, o);
+                if v < best[nm].0 { best[nm] = (v, o | 1 << c0); }
+            }
+            let v = c + nf as u32 + cost(full, o);
+            if v < best[nm].0 {
+                let mut pick = 0usize;
+                let mut bc = 0u32;
+                for k in 1..=n {
+                    if o >> k & 1 == 1 { continue; }
+                    let r = rem[k] - full[k] as u32;
+                    if r > bc { bc = r; pick = k; }
+                }
+                best[nm] = (v, if pick > 0 { o | 1 << pick } else { o });
+            }
+        }
+    }
+    best[full_mask].0
+}
+fn use_japprox() -> bool {
+    static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *F.get_or_init(|| std::env::var("COLORLB_JAPPROX").map(|v| v == "1").unwrap_or(false))
 }
 fn use_joint() -> bool {
     static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -603,11 +684,12 @@ fn ropt(n: usize, s0: State) -> u32 {
     u32::MAX
 }
 
-/// 7・8 色用の詰め方。各レーンを (N+1) 進の符号にして整列し、256 ビットに詰める（N ≤ 8）。
-type K4 = [u64; 4];
-fn pack4(s: &State, n: usize) -> K4 {
+/// 7 色以上の詰め方。各レーンを (N+1) 進の符号にして整列し、64W ビットに詰める。
+/// W は色数で選ぶ（7・8 色 4、9 色 5、10 色 7、11 色 8、12 色 10）。
+fn lane_bits(n: usize) -> usize { let b = (n + 1) as u64; (64 - (b.pow(n as u32) - 1).leading_zeros()) as usize }
+fn pack_w<const W: usize>(s: &State, n: usize) -> [u64; W] {
     let b = (n + 1) as u64;
-    let bits = (64 - (b.pow(n as u32) - 1).leading_zeros()) as usize;
+    let bits = lane_bits(n);
     let mut codes: Vec<u64> = s[..=n]
         .iter()
         .map(|&l| {
@@ -617,7 +699,7 @@ fn pack4(s: &State, n: usize) -> K4 {
         })
         .collect();
     codes.sort_unstable();
-    let mut x = [0u64; 4];
+    let mut x = [0u64; W];
     let mut pos = 0usize;
     for &c in &codes {
         for t in 0..bits {
@@ -627,9 +709,9 @@ fn pack4(s: &State, n: usize) -> K4 {
     }
     x
 }
-fn unpack4(x: &K4, n: usize) -> State {
+fn unpack_w<const W: usize>(x: &[u64; W], n: usize) -> State {
     let b = (n + 1) as u64;
-    let bits = (64 - (b.pow(n as u32) - 1).leading_zeros()) as usize;
+    let bits = lane_bits(n);
     let mut s = [0u64; MAXL];
     for i in 0..=n {
         let mut c = 0u64;
@@ -643,29 +725,39 @@ fn unpack4(x: &K4, n: usize) -> State {
     }
     canon(&s, n + 1)
 }
-/// prove の 7・8 色版（中身は同じ。重複除去は直近 2 層、層を塊に分けて展開）。
 fn prove4(n: usize, b: u32) {
-    assert!((7..=8).contains(&n));
+    match n {
+        7 | 8 => prove_w::<4>(n, b),
+        9 => prove_w::<5>(n, b),
+        10 => prove_w::<7>(n, b),
+        11 => prove_w::<8>(n, b),
+        12 => prove_w::<10>(n, b),
+        _ => panic!("7〜12 色だけ"),
+    }
+}
+/// prove の 7 色以上版（中身は同じ。重複除去は直近 2 層、層を塊に分けて展開）。
+fn prove_w<const W: usize>(n: usize, b: u32) {
+    assert!((n + 1) * lane_bits(n) <= 64 * W);
     let t0 = std::time::Instant::now();
     let s0 = canon(&initial(n), n + 1);
     let lb0 = h1(&s0, n) + d2(&s0, n).max(if use_dprime() { d3(&s0, n) } else { 0 });
     println!("N={n} B={b}: 初期状態の下界 {lb0}");
-    assert_eq!(unpack4(&pack4(&s0, n), n), s0);
-    let mut prev: Vec<K4> = Vec::new();
-    let mut layer: Vec<K4> = vec![pack4(&s0, n)];
+    assert_eq!(unpack_w::<W>(&pack_w::<W>(&s0, n), n), s0);
+    let mut prev: Vec<[u64; W]> = Vec::new();
+    let mut layer: Vec<[u64; W]> = vec![pack_w::<W>(&s0, n)];
     let mut total = 1u64;
     for g in 1..b {
-        let mut next: Vec<K4> = Vec::new();
+        let mut next: Vec<[u64; W]> = Vec::new();
         for chunk in layer.chunks(2_000_000) {
-            let mut part: Vec<K4> = chunk
+            let mut part: Vec<[u64; W]> = chunk
                 .par_iter()
                 .fold(Vec::new, |mut acc, x| {
-                    let s = unpack4(x, n);
+                    let s = unpack_w::<W>(x, n);
                     let mut buf = Vec::new();
                     neighbors(&s, n, &mut buf);
                     for t in buf {
                         if g + lb(&t, n) <= b - 1 && (!use_dprime() || g + h1(&t, n) + d3(&t, n) <= b - 1) {
-                            let k = pack4(&t, n);
+                            let k = pack_w::<W>(&t, n);
                             if layer.binary_search(&k).is_err() && prev.binary_search(&k).is_err() { acc.push(k); }
                         }
                     }
@@ -674,14 +766,14 @@ fn prove4(n: usize, b: u32) {
                 .reduce(Vec::new, |mut a, mut x| { a.append(&mut x); a });
             part.par_sort_unstable();
             part.dedup();
-            if use_joint() { part = part.into_par_iter().filter(|k| g + jlb_cached(&unpack4(k, n), n) <= b - 1).collect(); }
+            if use_joint() { part = part.into_par_iter().filter(|k| g + jlb_cached(&unpack_w::<W>(k, n), n) <= b - 1).collect(); }
             next.append(&mut part);
             if next.len() > 30_000_000 { next.par_sort_unstable(); next.dedup(); next.shrink_to_fit(); }
         }
         next.par_sort_unstable();
         next.dedup();
         next.shrink_to_fit();
-        if next.iter().any(|t| is_goal(&unpack4(t, n), n)) {
+        if next.iter().any(|t| is_goal(&unpack_w::<W>(t, n), n)) {
             println!("N={n} B={b}: {g} 手で完成に届いた → T ≤ {g}");
             return;
         }
@@ -722,7 +814,7 @@ fn jbeam(n: usize, width: usize, window: usize) {
                         let t = apply(s, a, b);
                         let k = canon(&t, lanes);
                         if recent.iter().any(|h| h.contains(&k)) { continue; }
-                        let j = jlb_cached(&t, n);
+                        let j = if use_japprox() { japprox(&t, n) } else { jlb_cached(&t, n) };
                         let mut hsh = 0xcbf29ce484222325u64;
                         for &x in &k[..lanes] { hsh = (hsh ^ x).wrapping_mul(0x100000001b3); }
                         acc.push((g + j, hsh, t, pi as u32, a as u8, b as u8));
@@ -925,6 +1017,23 @@ fn main() {
         "jbeam" => jbeam(n, a[3].parse().unwrap(), a.get(4).map(|x| x.parse().unwrap()).unwrap_or(6)),
         "ropt" => { let st = parse_state(n, &a[3..]); println!("start {}", show(&st, n)); println!("ropt = {}", ropt(n, st)); }
         "opt" => { let st = parse_state(n, &a[3..]); println!("start {}", show(&st, n)); let g = opt(n, st, false); println!("opt = {g}"); }
+        "jtime" => {
+            // 初期状態から決まった乱数で歩いた状態で J の計算時間を測る
+            let mut s = initial(n);
+            let mut seed = 12345u64;
+            let steps: usize = a[3].parse().unwrap();
+            for k in 0..=steps {
+                if k % (steps / 5).max(1) == 0 {
+                    let t = std::time::Instant::now();
+                    let v = jlb(&canon(&s, n + 1), n);
+                    println!("step={k} J={v} h+D={} {:.3}s", lb(&canon(&s, n + 1), n), t.elapsed().as_secs_f64());
+                }
+                let mut buf = Vec::new();
+                neighbors(&s, n, &mut buf);
+                seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                s = buf[(seed >> 33) as usize % buf.len()];
+            }
+        }
         "prove" => if n <= 6 { prove(n, a[3].parse().unwrap()) } else { prove4(n, a[3].parse().unwrap()) },
         _ => panic!("mode?"),
     }

@@ -9,7 +9,7 @@ import csv, os, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 D = "0123456789abcdefghijklmnopqrstuvwxyz"
-FILES = [("solutions/best.tsv", "moves36"), ("solutions/docs_known.tsv", "moves36"), ("solutions/halving_13_24.tsv", "solution")]
+FILES = [("solutions/best.tsv", "moves36"), ("solutions/docs_known.tsv", "moves36"), ("solutions/halving_13_24.tsv", "solution"), ("solutions/recur.tsv", "solution")]
 
 
 def replay(n, s):

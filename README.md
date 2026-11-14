@@ -37,13 +37,13 @@ so this is a "transposition" of N stacks using one spare stack.
 | 15 | 328 | 547 | open | 406 |
 | 16 | 374 | 656 | open | 465 |
 | 17 | 423 | 750 | open | 528 |
-| 18 | 475 | 948 | open | 595 |
+| 18 | 475 | 863 | open | 595 |
 | 19 | 530 | 1004 | open | 666 |
-| 20 | 588 | 1199 | open | 741 |
-| 21 | 649 | 1391 | open | 820 |
-| 22 | 713 | 1607 | open | 903 |
-| 23 | 780 | 1942 | open | 990 |
-| 24 | 850 | 2440 | open | 1081 |
+| 20 | 588 | 1157 | open | 741 |
+| 21 | 649 | 1360 | open | 820 |
+| 22 | 713 | 1477 | open | 903 |
+| 23 | 780 | 1692 | open | 990 |
+| 24 | 850 | 1934 | open | 1081 |
 <!-- bounds:end -->
 
 The source of this table is [bounds.tsv](bounds.tsv). The last column is the quadratic that fits the exact values; it is a guide, not a claim.
@@ -57,7 +57,8 @@ The source of this table is [bounds.tsv](bounds.tsv). The last column is the qua
   For N = 9, 10, 11 they come from beam search followed by re-optimisation of solution tails. The 8-colour (106) and 12-colour (272)
   solutions are earlier recorded solutions that this project has not improved; the 12-colour one was found by a search over macro-moves,
   and the origin of the 8-colour one is not recorded. Both replay correctly. For N = 13…24 the bounds come from a construction (complete the upper half of the colours
-  greedily, pouring two half-emptied lanes together to free a lane) followed by beam search. The values for N ≥ 13 are rough.
+  greedily, pouring two half-emptied lanes together to free a lane), then either a beam search on the remaining half or a replay of a known
+  solution for half as many colours on its top layer followed by beam search. The values for N ≥ 13 are rough.
 - **Growth.** T(N) = Θ(N²) follows from Szegedy and Yu (see Prior work). The constant is open:
   the lower bound gives 1.5, and the fitted quadratic would give 2.
 
