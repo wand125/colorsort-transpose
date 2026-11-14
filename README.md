@@ -44,7 +44,7 @@ so this is a "transposition" of N stacks using one spare stack.
 | 20 | 588 | 1157 | open | 741 |
 | 21 | 649 | 1336 | open | 820 |
 | 22 | 713 | 1477 | open | 903 |
-| 23 | 780 | 1692 | open | 990 |
+| 23 | 780 | 1632 | open | 990 |
 | 24 | 850 | 1873 | open | 1081 |
 <!-- bounds:end -->
 

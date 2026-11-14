@@ -20,5 +20,5 @@ N	lower	lower_basis	upper	upper_source	solution
 20	588	h+D の一般式 (3N²−N−4)/2	1157	自作: 半分割り＋下半分を幅 2e5 で解き直し	solutions/recur.tsv
 21	649	h+D の一般式 (3N²−N−4)/2	1336	自作: 半分割り＋下半分を幅 2e5 で解き直し	solutions/recur.tsv
 22	713	h+D の一般式 (3N²−N−4)/2	1477	自作: 半分割り＋11 色の解の当てはめ＋ビーム	solutions/recur.tsv
-23	780	h+D の一般式 (3N²−N−4)/2	1692	自作: 半分割り＋m 色の解の当てはめ＋ビーム	solutions/recur.tsv
+23	780	h+D の一般式 (3N²−N−4)/2	1632	自作: 半分割り＋下半分を幅 2e5 で解き直し	solutions/recur.tsv
 24	850	h+D の一般式 (3N²−N−4)/2	1873	自作: 半分割り＋m 色の解の当てはめ＋ビーム（幅 3e5）	solutions/recur.tsv
