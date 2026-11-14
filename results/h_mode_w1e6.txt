@@ -1,0 +1,10 @@
+N6 --h w1e6: N=6 moves=56 verified=true time=17.2s
+N6 --h --r2 w1e6: N=6 moves=56 verified=true time=3.1s
+N7 --h w1e6: N=7 moves=80 verified=true time=44.0s
+N7 --h --r2 w1e6: N=7 moves=79 verified=true time=19.9s
+N8 --h w1e6: N=8 moves=109 verified=true time=91.9s
+N8 --h --r2 w1e6: N=8 moves=109 verified=true time=44.8s
+N9 --h w1e6: N=9 moves=148 verified=true time=179.7s
+N9 --h --r2 w1e6: N=9 moves=144 verified=true time=85.4s
+
+[exited with code 0]

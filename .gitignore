@@ -1,0 +1,7 @@
+target/
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+# 作業メモ（計算機の運用メモを含むので公開しない）
+NOTES.md

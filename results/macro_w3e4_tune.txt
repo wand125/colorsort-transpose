@@ -1,0 +1,12 @@
+N10 []: N=10 moves=199 verified=true time=9.5s
+N10 [--wg 100 --lambda 0]: N=10 moves=376 verified=true time=37.2s
+N10 [--wg 80]: N=10 moves=323 verified=true time=30.7s
+N10 [--wg 120]: N=10 moves=201 verified=true time=18.0s
+N10 [--learned --lambda 50]: N=10 moves=188 verified=true time=32.3s
+N12 []: N=12 moves=349 verified=true time=42.1s
+N12 [--wg 100 --lambda 0]: NOT FOUND
+N12 [--wg 80]: N=12 moves=495 verified=true time=44.4s
+N12 [--wg 120]: N=12 moves=325 verified=true time=29.9s
+N12 [--learned --lambda 50]: N=12 moves=307 verified=true time=50.3s
+
+[exited with code 0]

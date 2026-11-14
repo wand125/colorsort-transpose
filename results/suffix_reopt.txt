@@ -1,0 +1,12 @@
+t=30 rest=78 (元 76) total=108 verified=True
+t=45 rest=62 (元 61) total=107 verified=True
+t=60 rest=46 (元 46) total=106 verified=True
+t=75 rest=31 (元 31) total=106 verified=True
+t=90 rest=16 (元 16) total=106 verified=True
+t=140 rest=141 (元 132) total=281 verified=True
+t=170 rest=104 (元 102) total=274 verified=True
+t=200 rest=73 (元 72) total=273 verified=True
+t=230 rest=43 (元 42) total=273 verified=True
+t=250 rest=22 (元 22) total=272 verified=True
+
+[exited with code 0]
