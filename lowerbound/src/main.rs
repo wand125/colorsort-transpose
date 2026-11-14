@@ -364,9 +364,20 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
     // （底の色 c0 のレーンが残っていれば c0 は表に出る）ので、足す色の候補から外す（最小値は変わらない）。
     // 同じ形のレーンは入れ替えても値が同じなので、形ごとに「何本片付けたか」だけを持つ（gc[g] 本のうち、混合基数 gm[g] の桁）。
     // 桁はビット欄（gm[g] = 1 << 位置、幅は gc[g] が入る最小のビット数）にして、割り算を避ける。
-    struct Gr<'a> { its: &'a [It], gc: &'a [usize], gm: &'a [usize], sh: &'a [u32], mk: &'a [usize], pm: &'a [u32], done: usize }
+    struct Gr<'a> { its: &'a [It], gc: &'a [usize], gm: &'a [usize], sh: &'a [u32], mk: &'a [usize], pm: &'a [u32], done: usize, cls: &'a [u32] }
     fn go(code: usize, o: u32, budget: u32, n: usize, colors: u32, gr: &Gr, memo: &mut Memo) -> u32 {
         if code == gr.done { return 0; }
+        JNODES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // 色の対称性: どのレーンの表でも個数が同じで、どのレーンの底の色でもない色どうしは入れ替えても値が同じ。
+        // 同じ組の中では「何色開いているか」だけを残し、開いている色を組の小さい番号から詰め直す。
+        let mut o = o;
+        for &m in gr.cls {
+            let k = (o & m).count_ones();
+            let mut lo = 0u32;
+            let mut mm = m;
+            for _ in 0..k { let b = mm & mm.wrapping_neg(); lo |= b; mm &= mm - 1; }
+            o = (o & !m) | lo;
+        }
         let (its, pm) = (gr.its, gr.pm);
         let d = its.len();
         let key = (code << (n + 1)) | o as usize;
@@ -375,13 +386,62 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
         // 残りのレーンの静的な下限: 残せるなら「残す」の動く数、残せないなら全部
         let lbi = |i: usize| -> u32 { if its[i].5 { its[i].1 as u32 } else { its[i].3 as u32 } };
         let mut h = 0u32;
-        for i in 0..d { h += ((gr.gc[i] - (code >> gr.sh[i] & gr.mk[i])) as u32) * lbi(i); }
-        let mut best = h.max(stored);
+        // 次に片付けるレーンは、静的な下限に加えて「家の開いていない色の玉」の分も払う（開ける色はそのレーン自身が払ったあとに開く）。
+        // 残りのレーンのうち、その余分が一番小さいものを足しても下限のまま。
+        // 順番 p 番目（0 始まり）に片付けるレーンより前に開く色は高々 p 色。そのレーンの余分（家の開いていない色の玉）は、
+        // 開いていない色の個数の多い順に p 色ぶんを引いた値以上。各 p で余分の下限が最小のレーンを取って足しても下限のまま
+        // （どの並べ方でも、p 番目のレーンの余分はその最小以上）。
+        let mut cp = [[0u32; 16]; MAXL];
+        let mut r = 0usize;
+        let mut ng = 0usize;
+        for i in 0..d {
+            let left = (gr.gc[i] - (code >> gr.sh[i] & gr.mk[i])) as u32;
+            if left == 0 { continue; }
+            h += left * lbi(i);
+            r += left as usize;
+            let (c0, nk, ref keep, nf, ref full, cankeep) = its[i];
+            let reduce = |t: &[u8; 16], skip: u8| -> [u32; 16] {
+                let mut v: [u8; 16] = [0; 16];
+                let mut m = 0;
+                for k in 1..=n { if o >> k & 1 == 0 && k as u8 != skip && t[k] > 0 { v[m] = t[k]; m += 1; } }
+                v[..m].sort_unstable_by(|a, b| b.cmp(a));
+                let mut pre = [0u32; 16];
+                for q in 0..15 { pre[q + 1] = pre[q] + if q < m { v[q] as u32 } else { 0 }; }
+                pre
+            };
+            let pf = reduce(full, 0);
+            let xf = nf as u32 + cost(full, o, n);
+            let kp = cankeep && o >> c0 & 1 == 0;
+            let pk = if kp { reduce(keep, c0) } else { [0; 16] };
+            let xk = if kp { nk as u32 + cost(keep, o, n) } else { u32::MAX };
+            let li = lbi(i);
+            for q in 0..=n.min(14) {
+                let mut v = xf - pf[q];
+                if kp { v = v.min(xk - pk[q]); }
+                cp[ng][q] = v.saturating_sub(li);
+            }
+            ng += 1;
+        }
+        let mut add = 0u32;
+        if use_hdyn() {
+            for q in 0..r {
+                let qq = q.min(n.min(14));
+                let mut m = u32::MAX;
+                for g in 0..ng { m = m.min(cp[g][qq]); }
+                if m == 0 { break; }
+                add += m;
+            }
+        }
+        let h_dyn = h + add;
+        let mut best = h_dyn.max(stored);
         if best > budget {
             memo.stamp[key] = memo.ep; memo.val[key] = best.min(254) as u8;
             return best;
         }
         best = u32::MAX;
+        // 手の候補を集め、(費用 + 残りの静的な下限, 足す色が残りに多い順) で並べてから試す。予算内の道が早く見つかる。
+        let mut opts: [(u32, u32, usize, u32); 192] = [(0, 0, 0, 0); 192];
+        let mut no = 0usize;
         for i in 0..d {
             if code >> gr.sh[i] & gr.mk[i] == gr.gc[i] { continue; }
             let (c0, nk, ref keep, nf, ref full, cankeep) = its[i];
@@ -389,27 +449,32 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
             let hn = h - lbi(i);
             if cankeep && o >> c0 & 1 == 0 {
                 let c = nk as u32 + cost(keep, o, n);
-                if c + hn > budget { best = best.min(c + hn); } else {
-                    let v = c + go(nm, o | 1 << c0, budget - c, n, colors, gr, memo);
-                    if v <= budget { return v; }
-                    best = best.min(v);
-                }
+                if c + hn > budget { best = best.min(c + hn); } else if no < 192 { opts[no] = (c + hn, 0, nm, (o | 1 << c0) | (c << 24)); no += 1; }
             }
             let fc = nf as u32 + cost(full, o, n);
             if fc + hn > budget { best = best.min(fc + hn); continue; }
-            let v = fc + go(nm, o, budget - fc, n, colors, gr, memo);
-            if v <= budget { return v; }
-            best = best.min(v);
             let mut present = 0u32;
-            for j in 0..d { if nm >> gr.sh[j] & gr.mk[j] < gr.gc[j] { present |= pm[j]; } }
+            let mut cnt = [0u32; 16];
+            for j in 0..d {
+                let left = (gr.gc[j] - (nm >> gr.sh[j] & gr.mk[j])) as u32;
+                if left > 0 { present |= pm[j]; for k in 1..=n { cnt[k] += left * its[j].4[k] as u32; } }
+            }
+            if no < 192 { opts[no] = (fc + hn, 255, nm, o | (fc << 24)); no += 1; }
             let mut rest = colors & !o & present;
             while rest != 0 {
                 let c = rest.trailing_zeros();
                 rest &= rest - 1;
-                let v = fc + go(nm, o | 1 << c, budget - fc, n, colors, gr, memo);
-                if v <= budget { return v; }
-                best = best.min(v);
+                if no < 192 { opts[no] = (fc + hn, 255 - cnt[c as usize].min(254), nm, (o | 1 << c) | (fc << 24)); no += 1; }
             }
+        }
+        assert!(no < 192);
+        let ops = &mut opts[..no];
+        if use_order() { ops.sort_unstable_by_key(|x| (x.0, x.1)); }
+        for &(_, _, nm, oc) in ops.iter() {
+            let (c, no2) = (oc >> 24, oc & 0xff_ffff);
+            let v = c + go(nm, no2, budget - c, n, colors, gr, memo);
+            if v <= budget { return v; }
+            best = best.min(v);
         }
         let best = best.max(stored);
         memo.stamp[key] = memo.ep;
@@ -460,7 +525,24 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
             let pm: Vec<u32> = its.iter().map(|it| { let mut m = 0u32; for k in 1..=n { if it.4[k] > 0 { m |= 1 << k; } } m }).collect();
             // 空レーンの家: k0 に無い色から 0〜e 色（どのレーンにも出てこない色は足しても同じなので外す）
             let free = colors & !k0 & pm.iter().fold(0, |a, &m| a | m);
-            let gr = Gr { its: &its, gc: &gc, gm: &gm, sh: &sh, mk: &mk, pm: &pm, done };
+            // 色の組（2 色以上の組だけ）: 底の色でなく、全部のレーンの残す表・全部の表で個数が同じ色
+            let mut cls: Vec<u32> = Vec::new();
+            if use_sym() {
+                let mut c0s = 0u32;
+                for it in &its { c0s |= 1 << it.0; }
+                let mut used = c0s | 1;
+                for k in 1..=n {
+                    if used >> k & 1 == 1 { continue; }
+                    let mut m = 1u32 << k;
+                    for k2 in k + 1..=n {
+                        if used >> k2 & 1 == 1 { continue; }
+                        if its.iter().all(|it| it.2[k] == it.2[k2] && it.4[k] == it.4[k2]) { m |= 1 << k2; }
+                    }
+                    used |= m;
+                    if m.count_ones() > 1 { cls.push(m); }
+                }
+            }
+            let gr = Gr { its: &its, gc: &gc, gm: &gm, sh: &sh, mk: &mk, pm: &pm, done, cls: &cls };
             let mut sub = free;
             loop {
                 if (sub.count_ones() as usize) <= e {
@@ -583,6 +665,10 @@ fn jlb_ref(s: &State, n: usize) -> u32 {
 /// その「形」を鍵にスレッドごとに覚えておく。
 static JCALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static JNANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static JNODES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static JACC: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static JACCNS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static JQUICK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static JLOOK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// J ≤ thr かどうか（閾値つき）。レーンの形を鍵に、分かった上限と下限をスレッドごとに覚える。
 fn jle_cached(s: &State, n: usize, thr: u32) -> bool {
@@ -594,9 +680,12 @@ fn jle_cached(s: &State, n: usize, thr: u32) -> bool {
         if (hi as u32) <= thr { return true; }
         if (lo as u32) > thr { return false; }
         let t = std::time::Instant::now();
-        let r = jlb_thr(s, n, thr);
+        // 近道: japprox は J の規則どおりの道 1 本の費用（J 以上）。閾値以下なら DP に入らずに通す。
+        let r = { let ja = if use_quick() { japprox(s, n) } else { u32::MAX }; if ja <= thr { JQUICK.fetch_add(1, std::sync::atomic::Ordering::Relaxed); ja } else { jlb_thr(s, n, thr) } };
         JCALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        JNANOS.fetch_add(t.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+        let dt = t.elapsed().as_nanos() as u64;
+        JNANOS.fetch_add(dt, std::sync::atomic::Ordering::Relaxed);
+        if r <= thr { JACC.fetch_add(1, std::sync::atomic::Ordering::Relaxed); JACCNS.fetch_add(dt, std::sync::atomic::Ordering::Relaxed); }
         let mut m = c.borrow_mut();
         if m.len() > 2_000_000 { m.clear(); }
         let e = m.entry(key).or_insert((0, 255));
@@ -720,6 +809,26 @@ fn use_jref() -> bool {
 fn j_ok(s: &State, n: usize, thr: u32) -> bool {
     static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     if *F.get_or_init(|| std::env::var("COLORLB_JEXACT").is_ok()) { jlb_cached(s, n) <= thr } else { jle_cached(s, n, thr) }
+}
+fn use_order() -> bool {
+    static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *F.get_or_init(|| std::env::var("COLORLB_NOORDER").is_err())
+}
+fn use_quick() -> bool {
+    static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *F.get_or_init(|| std::env::var("COLORLB_NOQUICK").is_err())
+}
+fn use_sym() -> bool {
+    static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *F.get_or_init(|| std::env::var("COLORLB_NOSYM").is_err())
+}
+fn late_dprime() -> bool {
+    static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *F.get_or_init(|| std::env::var("COLORLB_EARLYDP").is_err())
+}
+fn use_hdyn() -> bool {
+    static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *F.get_or_init(|| std::env::var("COLORLB_NOHDYN").is_err())
 }
 fn use_joint() -> bool {
     static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -933,7 +1042,7 @@ fn prove(n: usize, b: u32) {
                     let mut buf = Vec::new();
                     neighbors(&s, n, &mut buf);
                     for t in buf {
-                        if g + lb(&t, n) <= b - 1 && (!use_dprime() || g + h1(&t, n) + d3(&t, n) <= b - 1) {
+                        if g + lb(&t, n) <= b - 1 && (late_dprime() || !use_dprime() || g + h1(&t, n) + d3(&t, n) <= b - 1) {
                             let k = pack(&t, n);
                             if layer.binary_search(&k).is_err() && prev.binary_search(&k).is_err() { acc.push(k); }
                         }
@@ -943,7 +1052,13 @@ fn prove(n: usize, b: u32) {
                 .reduce(Vec::new, |mut a, mut x| { a.append(&mut x); a });
             part.par_sort_unstable();
             part.dedup();
-            if use_joint() { part = part.into_par_iter().filter(|k| j_ok(&unpack(*k, n), n, b - 1 - g)).collect(); }
+            // D′ と J は、重複を除いたあとにだけ呼ぶ（安い順に D′ → J）
+            if (late_dprime() && use_dprime()) || use_joint() {
+                part = part.into_par_iter().filter(|k| {
+                    let t = unpack(*k, n);
+                    (!(late_dprime() && use_dprime()) || g + h1(&t, n) + d3(&t, n) <= b - 1) && (!use_joint() || j_ok(&t, n, b - 1 - g))
+                }).collect();
+            }
             next.append(&mut part);
             if next.len() > 50_000_000 { next.par_sort_unstable(); next.dedup(); next.shrink_to_fit(); }
         }
@@ -955,7 +1070,7 @@ fn prove(n: usize, b: u32) {
             return;
         }
         total += next.len() as u64;
-        eprintln!("g={g} layer={} total={total} {:.1}s J呼び出し {} 計算 {} 計 {:.1}s", next.len(), t0.elapsed().as_secs_f64(), JLOOK.load(std::sync::atomic::Ordering::Relaxed), JCALLS.load(std::sync::atomic::Ordering::Relaxed), JNANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9);
+        eprintln!("g={g} layer={} total={total} {:.1}s J呼び出し {} 計算 {} 計 {:.1}s 節点 {} 通過 {} {:.1}s 近道 {}", next.len(), t0.elapsed().as_secs_f64(), JLOOK.load(std::sync::atomic::Ordering::Relaxed), JCALLS.load(std::sync::atomic::Ordering::Relaxed), JNANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9, JNODES.load(std::sync::atomic::Ordering::Relaxed), JACC.load(std::sync::atomic::Ordering::Relaxed), JACCNS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9, JQUICK.load(std::sync::atomic::Ordering::Relaxed));
         if next.is_empty() { break; }
         prev = std::mem::replace(&mut layer, next);
     }
@@ -1072,7 +1187,7 @@ fn prove_w<const W: usize>(n: usize, b: u32) {
                     let mut buf = Vec::new();
                     neighbors(&s, n, &mut buf);
                     for t in buf {
-                        if g + lb(&t, n) <= b - 1 && (!use_dprime() || g + h1(&t, n) + d3(&t, n) <= b - 1) {
+                        if g + lb(&t, n) <= b - 1 && (late_dprime() || !use_dprime() || g + h1(&t, n) + d3(&t, n) <= b - 1) {
                             let k = pack_w::<W>(&t, n);
                             if layer.binary_search(&k).is_err() && prev.binary_search(&k).is_err() { acc.push(k); }
                         }
@@ -1082,7 +1197,13 @@ fn prove_w<const W: usize>(n: usize, b: u32) {
                 .reduce(Vec::new, |mut a, mut x| { a.append(&mut x); a });
             part.par_sort_unstable();
             part.dedup();
-            if use_joint() { part = part.into_par_iter().filter(|k| j_ok(&unpack_w::<W>(k, n), n, b - 1 - g)).collect(); }
+            // D′ と J は、重複を除いたあとにだけ呼ぶ（安い順に D′ → J）
+            if (late_dprime() && use_dprime()) || use_joint() {
+                part = part.into_par_iter().filter(|k| {
+                    let t = unpack_w::<W>(k, n);
+                    (!(late_dprime() && use_dprime()) || g + h1(&t, n) + d3(&t, n) <= b - 1) && (!use_joint() || j_ok(&t, n, b - 1 - g))
+                }).collect();
+            }
             next.append(&mut part);
             if next.len() > 30_000_000 { next.par_sort_unstable(); next.dedup(); next.shrink_to_fit(); }
         }
@@ -1094,7 +1215,7 @@ fn prove_w<const W: usize>(n: usize, b: u32) {
             return;
         }
         total += next.len() as u64;
-        eprintln!("g={g} layer={} total={total} {:.1}s J呼び出し {} 計算 {} 計 {:.1}s", next.len(), t0.elapsed().as_secs_f64(), JLOOK.load(std::sync::atomic::Ordering::Relaxed), JCALLS.load(std::sync::atomic::Ordering::Relaxed), JNANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9);
+        eprintln!("g={g} layer={} total={total} {:.1}s J呼び出し {} 計算 {} 計 {:.1}s 節点 {} 通過 {} {:.1}s 近道 {}", next.len(), t0.elapsed().as_secs_f64(), JLOOK.load(std::sync::atomic::Ordering::Relaxed), JCALLS.load(std::sync::atomic::Ordering::Relaxed), JNANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9, JNODES.load(std::sync::atomic::Ordering::Relaxed), JACC.load(std::sync::atomic::Ordering::Relaxed), JACCNS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9, JQUICK.load(std::sync::atomic::Ordering::Relaxed));
         if next.is_empty() { break; }
         prev = std::mem::replace(&mut layer, next);
     }
@@ -1357,6 +1478,8 @@ fn main() {
                     let r = jlb_thr(&c, n, thr);
                     if (r <= thr) != (j <= thr) || (r <= thr && r < j) || (r > thr && r > j) { ok = false; }
                 }
+                let ja = japprox(&c, n);
+                if ja < j { ok = false; println!("japprox {ja} < J {j}"); }
                 if ok { same += 1 } else { diff += 1; println!("不一致 {}", show(&c, n)); }
             }
             println!("N={n} 一致 {same} 不一致 {diff}");
