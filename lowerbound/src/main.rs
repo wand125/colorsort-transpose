@@ -327,6 +327,154 @@ fn jlb(s: &State, n: usize) -> u32 {
         best
     })
 }
+/// 閾値つきの J。戻り値 r が thr 以下なら、費用 r の道がある（J ≤ r ≤ thr）。thr を超えるなら J ≥ r（下界）。
+/// 深さ優先で、(ここまでの費用) + (残りのレーンの静的な下限) が予算を超える枝を切る。
+/// 予算内の道が 1 本見つかった時点で返す。切った枝から分かった下限は (片付けたレーン, 開いた色) ごとに表に残し、
+/// 予算が違う呼び出しでも使う（下限はどの予算でも正しい）。
+fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
+    // (底の色, 残すときの動く数, 残すときの表, 全部出すときの数, 全部の表, 残せるか)
+    type It = (u8, u8, [u8; 16], u8, [u8; 16], bool);
+    let mut e = 0usize;
+    let mut items: Vec<It> = Vec::new();
+    let mut uni: Vec<(u8, u8)> = Vec::new();
+    for &l in &s[..=n] {
+        let ht = height(l);
+        if ht == 0 { e += 1; continue; }
+        let c0 = ball(l, 0);
+        let mut r = 1;
+        while r < ht && ball(l, r) == c0 { r += 1; }
+        // 完成したレーン（色 c0 が N 個）は残すのが常に最善: 費用 0 で、ほかのレーンに c0 は無いので何も妨げない。
+        // 片付けるなら N 手以上かかる。値を変えずに外せる（2^単色レーン数 の繰り返しが減る）。
+        if r == ht && ht == n { continue; }
+        if r == ht { uni.push((c0, ht as u8)); continue; }
+        let mut keep = [0u8; 16];
+        for k in r..ht { keep[ball(l, k) as usize] += 1; }
+        let mut full = keep;
+        full[c0 as usize] += r as u8;
+        items.push((c0, (ht - r) as u8, keep, ht as u8, full, true));
+    }
+    let colors: u32 = ((1u32 << (n + 1)) - 1) & !1;
+    struct Memo<'a> { stamp: &'a mut Vec<u32>, val: &'a mut Vec<u8>, ep: u32 }
+    fn cost(cnt: &[u8; 16], o: u32, n: usize) -> u32 {
+        let mut c = 0u32;
+        for k in 1..=n { if o >> k & 1 == 0 { c += cnt[k] as u32; } }
+        c
+    }
+    // pm[i]: レーン i の全部の表に出てくる色。残りのレーンに出てこない色を家に足しても、費用も「残せるか」も変わらない
+    // （底の色 c0 のレーンが残っていれば c0 は表に出る）ので、足す色の候補から外す（最小値は変わらない）。
+    // 同じ形のレーンは入れ替えても値が同じなので、形ごとに「何本片付けたか」だけを持つ（gc[g] 本のうち、混合基数 gm[g] の桁）。
+    // 桁はビット欄（gm[g] = 1 << 位置、幅は gc[g] が入る最小のビット数）にして、割り算を避ける。
+    struct Gr<'a> { its: &'a [It], gc: &'a [usize], gm: &'a [usize], sh: &'a [u32], mk: &'a [usize], pm: &'a [u32], done: usize }
+    fn go(code: usize, o: u32, budget: u32, n: usize, colors: u32, gr: &Gr, memo: &mut Memo) -> u32 {
+        if code == gr.done { return 0; }
+        let (its, pm) = (gr.its, gr.pm);
+        let d = its.len();
+        let key = (code << (n + 1)) | o as usize;
+        let stored = if memo.stamp[key] == memo.ep { memo.val[key] as u32 } else { 0 };
+        if stored > budget { return stored; }
+        // 残りのレーンの静的な下限: 残せるなら「残す」の動く数、残せないなら全部
+        let lbi = |i: usize| -> u32 { if its[i].5 { its[i].1 as u32 } else { its[i].3 as u32 } };
+        let mut h = 0u32;
+        for i in 0..d { h += ((gr.gc[i] - (code >> gr.sh[i] & gr.mk[i])) as u32) * lbi(i); }
+        let mut best = h.max(stored);
+        if best > budget {
+            memo.stamp[key] = memo.ep; memo.val[key] = best.min(254) as u8;
+            return best;
+        }
+        best = u32::MAX;
+        for i in 0..d {
+            if code >> gr.sh[i] & gr.mk[i] == gr.gc[i] { continue; }
+            let (c0, nk, ref keep, nf, ref full, cankeep) = its[i];
+            let nm = code + gr.gm[i];
+            let hn = h - lbi(i);
+            if cankeep && o >> c0 & 1 == 0 {
+                let c = nk as u32 + cost(keep, o, n);
+                if c + hn > budget { best = best.min(c + hn); } else {
+                    let v = c + go(nm, o | 1 << c0, budget - c, n, colors, gr, memo);
+                    if v <= budget { return v; }
+                    best = best.min(v);
+                }
+            }
+            let fc = nf as u32 + cost(full, o, n);
+            if fc + hn > budget { best = best.min(fc + hn); continue; }
+            let v = fc + go(nm, o, budget - fc, n, colors, gr, memo);
+            if v <= budget { return v; }
+            best = best.min(v);
+            let mut present = 0u32;
+            for j in 0..d { if nm >> gr.sh[j] & gr.mk[j] < gr.gc[j] { present |= pm[j]; } }
+            let mut rest = colors & !o & present;
+            while rest != 0 {
+                let c = rest.trailing_zeros();
+                rest &= rest - 1;
+                let v = fc + go(nm, o | 1 << c, budget - fc, n, colors, gr, memo);
+                if v <= budget { return v; }
+                best = best.min(v);
+            }
+        }
+        let best = best.max(stored);
+        memo.stamp[key] = memo.ep;
+        memo.val[key] = best.min(254) as u8;
+        best
+    }
+    thread_local! { static JTBUF: std::cell::RefCell<(Vec<u32>, Vec<u8>, u32)> = std::cell::RefCell::new((Vec::new(), Vec::new(), 0)); }
+    JTBUF.with(|cell| {
+        let mut guard = cell.borrow_mut();
+        let (stamp, val, epoch) = &mut *guard;
+        let mut best = u32::MAX;
+        let nu = uni.len();
+        for kset in 0usize..(1 << nu) {
+            let mut k0 = 0u32;
+            let mut ok = true;
+            let mut its = items.clone();
+            for (i, &(u, len)) in uni.iter().enumerate() {
+                if kset >> i & 1 == 1 {
+                    if k0 >> u & 1 == 1 { ok = false; break; }
+                    k0 |= 1 << u;
+                } else {
+                    let mut full = [0u8; 16];
+                    full[u as usize] = len;
+                    its.push((u, 0, [0u8; 16], len, full, false));
+                }
+            }
+            if !ok { continue; }
+            its.sort_unstable();
+            let mut gi: Vec<It> = Vec::new();
+            let mut gc: Vec<usize> = Vec::new();
+            for it in its { if gi.last() == Some(&it) { *gc.last_mut().unwrap() += 1; } else { gi.push(it); gc.push(1); } }
+            let (mut gm, mut sh, mut mk) = (Vec::new(), Vec::new(), Vec::new());
+            let mut bits = 0u32;
+            let mut done = 0usize;
+            for &c in &gc {
+                let w = usize::BITS - c.leading_zeros();
+                gm.push(1usize << bits); sh.push(bits); mk.push((1usize << w) - 1);
+                done |= c << bits;
+                bits += w;
+            }
+            let tot = done + 1;
+            let its = gi;
+            let size = tot << (n + 1);
+            if stamp.len() < size { stamp.resize(size, 0); val.resize(size, 0); }
+            *epoch = epoch.wrapping_add(1);
+            if *epoch == 0 { stamp.iter_mut().for_each(|x| *x = 0); *epoch = 1; }
+            let mut memo = Memo { stamp: &mut *stamp, val: &mut *val, ep: *epoch };
+            let pm: Vec<u32> = its.iter().map(|it| { let mut m = 0u32; for k in 1..=n { if it.4[k] > 0 { m |= 1 << k; } } m }).collect();
+            // 空レーンの家: k0 に無い色から 0〜e 色（どのレーンにも出てこない色は足しても同じなので外す）
+            let free = colors & !k0 & pm.iter().fold(0, |a, &m| a | m);
+            let gr = Gr { its: &its, gc: &gc, gm: &gm, sh: &sh, mk: &mk, pm: &pm, done };
+            let mut sub = free;
+            loop {
+                if (sub.count_ones() as usize) <= e {
+                    let v = go(0, k0 | sub, thr, n, colors, &gr, &mut memo);
+                    if v <= thr { return v; }
+                    if v < best { best = v; }
+                }
+                if sub == 0 { break; }
+                sub = (sub - 1) & free;
+            }
+        }
+        best
+    })
+}
 /// 以前の J（レーンを 1 本ずつ区別する版）。jtime で新しい版と値を突き合わせる用。
 #[allow(dead_code)]
 fn jlb_ref(s: &State, n: usize) -> u32 {
@@ -436,8 +584,27 @@ fn jlb_ref(s: &State, n: usize) -> u32 {
 static JCALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static JNANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static JLOOK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-fn jlb_cached(s: &State, n: usize) -> u32 {
+/// J ≤ thr かどうか（閾値つき）。レーンの形を鍵に、分かった上限と下限をスレッドごとに覚える。
+fn jle_cached(s: &State, n: usize, thr: u32) -> bool {
     JLOOK.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let key = jkey(s, n);
+    thread_local! { static CT: std::cell::RefCell<HashMap<[u64; MAXL], (u8, u8)>> = std::cell::RefCell::new(HashMap::new()); }
+    CT.with(|c| {
+        let (lo, hi) = c.borrow().get(&key).copied().unwrap_or((0, 255));
+        if (hi as u32) <= thr { return true; }
+        if (lo as u32) > thr { return false; }
+        let t = std::time::Instant::now();
+        let r = jlb_thr(s, n, thr);
+        JCALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        JNANOS.fetch_add(t.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+        let mut m = c.borrow_mut();
+        if m.len() > 2_000_000 { m.clear(); }
+        let e = m.entry(key).or_insert((0, 255));
+        if r <= thr { e.1 = e.1.min(r.min(255) as u8); } else { e.0 = e.0.max(r.min(254) as u8); }
+        r <= thr
+    })
+}
+fn jkey(s: &State, n: usize) -> [u64; MAXL] {
     let mut key = [0u64; MAXL];
     for (i, &l) in s[..=n].iter().enumerate() {
         let ht = height(l);
@@ -450,6 +617,11 @@ fn jlb_cached(s: &State, n: usize) -> u32 {
         key[i] = sig;
     }
     key[..=n].sort_unstable();
+    key
+}
+fn jlb_cached(s: &State, n: usize) -> u32 {
+    JLOOK.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let key = jkey(s, n);
     thread_local! { static C: std::cell::RefCell<HashMap<[u64; MAXL], u8>> = std::cell::RefCell::new(HashMap::new()); }
     C.with(|c| {
         if let Some(&v) = c.borrow().get(&key) { return v as u32; }
@@ -543,6 +715,11 @@ fn use_japprox() -> bool {
 fn use_jref() -> bool {
     static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *F.get_or_init(|| std::env::var("COLORLB_JREF").is_ok())
+}
+/// 証明の J の判定: 既定は閾値で打ち切る版。COLORLB_JEXACT=1 で J を正確に求めて比べる（以前の動き）。
+fn j_ok(s: &State, n: usize, thr: u32) -> bool {
+    static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *F.get_or_init(|| std::env::var("COLORLB_JEXACT").is_ok()) { jlb_cached(s, n) <= thr } else { jle_cached(s, n, thr) }
 }
 fn use_joint() -> bool {
     static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -766,7 +943,7 @@ fn prove(n: usize, b: u32) {
                 .reduce(Vec::new, |mut a, mut x| { a.append(&mut x); a });
             part.par_sort_unstable();
             part.dedup();
-            if use_joint() { part = part.into_par_iter().filter(|k| g + jlb_cached(&unpack(*k, n), n) <= b - 1).collect(); }
+            if use_joint() { part = part.into_par_iter().filter(|k| j_ok(&unpack(*k, n), n, b - 1 - g)).collect(); }
             next.append(&mut part);
             if next.len() > 50_000_000 { next.par_sort_unstable(); next.dedup(); next.shrink_to_fit(); }
         }
@@ -905,7 +1082,7 @@ fn prove_w<const W: usize>(n: usize, b: u32) {
                 .reduce(Vec::new, |mut a, mut x| { a.append(&mut x); a });
             part.par_sort_unstable();
             part.dedup();
-            if use_joint() { part = part.into_par_iter().filter(|k| g + jlb_cached(&unpack_w::<W>(k, n), n) <= b - 1).collect(); }
+            if use_joint() { part = part.into_par_iter().filter(|k| j_ok(&unpack_w::<W>(k, n), n, b - 1 - g)).collect(); }
             next.append(&mut part);
             if next.len() > 30_000_000 { next.par_sort_unstable(); next.dedup(); next.shrink_to_fit(); }
         }
@@ -1172,7 +1349,15 @@ fn main() {
                     s = buf[(seed >> 33) as usize % buf.len()];
                 }
                 let c = canon(&s, n + 1);
-                if jlb(&c, n) == jlb_ref(&c, n) { same += 1 } else { diff += 1; println!("不一致 {}", show(&c, n)); }
+                let j = jlb(&c, n);
+                let mut ok = j == jlb_ref(&c, n);
+                // 閾値つきの J: J−3〜J+3 のどの閾値でも「J ≤ thr」の判定が正確な J と一致し、戻り値も約束どおりか
+                for d in 0..7u32 {
+                    let thr = (j + d).saturating_sub(3);
+                    let r = jlb_thr(&c, n, thr);
+                    if (r <= thr) != (j <= thr) || (r <= thr && r < j) || (r > thr && r > j) { ok = false; }
+                }
+                if ok { same += 1 } else { diff += 1; println!("不一致 {}", show(&c, n)); }
             }
             println!("N={n} 一致 {same} 不一致 {diff}");
         }
