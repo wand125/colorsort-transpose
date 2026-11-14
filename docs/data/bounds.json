@@ -73,13 +73,13 @@
  },
  {
   "N": 8,
-  "lower": 90,
+  "lower": 91,
   "upper": 106,
   "exact": false,
   "general": 90,
   "fit": 105,
-  "lower_en": "general bound (3N²−N−4)/2",
-  "lower_ja": "一般式 (3N²−N−4)/2",
+  "lower_en": "pruned search with the bound J",
+  "lower_ja": "下界 J を使った枝刈り全探索",
   "upper_en": "earlier recorded solution",
   "upper_ja": "以前から記録されていた手順"
  },

@@ -82,7 +82,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\
     <tr><td class="num">5</td><td class="num">36</td><td class="num">36</td><td><span class="tag exact">exact</span></td><td>exhaustive search</td><td>optimal solution</td><td class="num">36</td></tr>
     <tr><td class="num">6</td><td class="num">55</td><td class="num">55</td><td><span class="tag exact">exact</span></td><td>pruned search with the bound J</td><td>search restricted by two rules</td><td class="num">55</td></tr>
     <tr><td class="num">7</td><td class="num">72</td><td class="num">78</td><td><span class="tag">open</span></td><td>pruned search with the bound J</td><td>beam search</td><td class="num">78</td></tr>
-    <tr><td class="num">8</td><td class="num">90</td><td class="num">106</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>earlier recorded solution</td><td class="num">105</td></tr>
+    <tr><td class="num">8</td><td class="num">91</td><td class="num">106</td><td><span class="tag">open</span></td><td>pruned search with the bound J</td><td>earlier recorded solution</td><td class="num">105</td></tr>
     <tr><td class="num">9</td><td class="num">115</td><td class="num">141</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>beam search</td><td class="num">136</td></tr>
     <tr><td class="num">10</td><td class="num">143</td><td class="num">180</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>beam search</td><td class="num">171</td></tr>
     <tr><td class="num">11</td><td class="num">174</td><td class="num">229</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>beam search</td><td class="num">210</td></tr>
@@ -179,7 +179,7 @@ where \(\sigma_j(X)\) is the largest total size of \(j\) colour classes of \(X\)
   <caption>Table 2. States visited by the search for \(T(6)\ge B\), by pruning bound. Every search that was run ended without reaching a finished state.</caption>
 </table>
 </div>
-<p>The search for \(B=55\) with \(J\) took 2,528 seconds on one desktop machine. With the 55-move solution of Section 7 this gives \(T(6)=55\). For seven colours the same search gives \(T(7)\ge71\) with 82,727 states and \(T(7)\ge72\) with 800,114 states. Each further value of \(B\) multiplies the number of states by seven to ten.</p>
+<p>The search for \(B=55\) with \(J\) took 2,528 seconds on one desktop machine. With the 55-move solution of Section 7 this gives \(T(6)=55\). For seven colours the same search gives \(T(7)\ge71\) with 82,727 states and \(T(7)\ge72\) with 800,114 states. Each further value of \(B\) multiplies the number of states by seven to ten. For eight colours the search gives \(T(8)\ge91\) with 3,925 states, one more than Theorem 1.</p>
 </section>
 
 <section id="upper" class="prose">

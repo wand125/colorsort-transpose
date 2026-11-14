@@ -29,7 +29,7 @@ so this is a "transposition" of N stacks using one spare stack.
 | 5 | 36 | 36 | **exact** | 36 |
 | 6 | 55 | 55 | **exact** | 55 |
 | 7 | 72 | 78 | open | 78 |
-| 8 | 90 | 106 | open | 105 |
+| 8 | 91 | 106 | open | 105 |
 | 9 | 115 | 141 | open | 136 |
 | 10 | 143 | 180 | open | 171 |
 | 11 | 174 | 229 | open | 210 |

@@ -82,7 +82,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\
     <tr><td class="num">5</td><td class="num">36</td><td class="num">36</td><td><span class="tag exact">確定</span></td><td>全探索</td><td>最短の手順</td><td class="num">36</td></tr>
     <tr><td class="num">6</td><td class="num">55</td><td class="num">55</td><td><span class="tag exact">確定</span></td><td>下界 J を使った枝刈り全探索</td><td>2 つの規則で制限した探索</td><td class="num">55</td></tr>
     <tr><td class="num">7</td><td class="num">72</td><td class="num">78</td><td><span class="tag">未確定</span></td><td>下界 J を使った枝刈り全探索</td><td>ビーム探索</td><td class="num">78</td></tr>
-    <tr><td class="num">8</td><td class="num">90</td><td class="num">106</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>以前から記録されていた手順</td><td class="num">105</td></tr>
+    <tr><td class="num">8</td><td class="num">91</td><td class="num">106</td><td><span class="tag">未確定</span></td><td>下界 J を使った枝刈り全探索</td><td>以前から記録されていた手順</td><td class="num">105</td></tr>
     <tr><td class="num">9</td><td class="num">115</td><td class="num">141</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>ビーム探索</td><td class="num">136</td></tr>
     <tr><td class="num">10</td><td class="num">143</td><td class="num">180</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>ビーム探索</td><td class="num">171</td></tr>
     <tr><td class="num">11</td><td class="num">174</td><td class="num">229</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>ビーム探索</td><td class="num">210</td></tr>
@@ -179,7 +179,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\
   <caption>表 2. \(T(6)\ge B\) の探索でたどった状態の数（枝刈りに使った下界ごと）。実行した探索は、どれも完成形に届かずに終わった。</caption>
 </table>
 </div>
-<p>\(J\) による \(B=55\) の探索は、デスクトップ計算機 1 台で 2,528 秒かかった。7 節の 55 手の手順と合わせて \(T(6)=55\) を得る。7 色では、同じ探索で \(T(7)\ge71\)（82,727 状態）と \(T(7)\ge72\)（800,114 状態）を得た。\(B\) を 1 上げるごとに、状態数は 7〜10 倍になる。</p>
+<p>\(J\) による \(B=55\) の探索は、デスクトップ計算機 1 台で 2,528 秒かかった。7 節の 55 手の手順と合わせて \(T(6)=55\) を得る。7 色では、同じ探索で \(T(7)\ge71\)（82,727 状態）と \(T(7)\ge72\)（800,114 状態）を得た。\(B\) を 1 上げるごとに、状態数は 7〜10 倍になる。8 色では、同じ探索で \(T(8)\ge91\)（3,925 状態）を得た。定理 1 の値より 1 大きい。</p>
 </section>
 
 <section id="upper" class="prose">
