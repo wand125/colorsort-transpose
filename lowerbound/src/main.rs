@@ -679,6 +679,8 @@ fn jle_cached(s: &State, n: usize, thr: u32) -> bool {
         let (lo, hi) = c.borrow().get(&key).copied().unwrap_or((0, 255));
         if (hi as u32) <= thr { return true; }
         if (lo as u32) > thr { return false; }
+        // 形ごとの記録で決まらないときだけ、先に安い h + D′ で落とす（D′ は形ごとに覚えないので、記録で済む局面には呼ばない）
+        if use_dprime() && h1(s, n) + d3(s, n) > thr { return false; }
         let t = std::time::Instant::now();
         // 近道: japprox は J の規則どおりの道 1 本の費用（J 以上）。閾値以下なら DP に入らずに通す。
         let r = { let ja = if use_quick() { japprox(s, n) } else { u32::MAX }; if ja <= thr { JQUICK.fetch_add(1, std::sync::atomic::Ordering::Relaxed); ja } else { jlb_thr(s, n, thr) } };
@@ -1056,7 +1058,7 @@ fn prove(n: usize, b: u32) {
             if (late_dprime() && use_dprime()) || use_joint() {
                 part = part.into_par_iter().filter(|k| {
                     let t = unpack(*k, n);
-                    (!(late_dprime() && use_dprime()) || g + h1(&t, n) + d3(&t, n) <= b - 1) && (!use_joint() || j_ok(&t, n, b - 1 - g))
+                    (use_joint() || !(late_dprime() && use_dprime()) || g + h1(&t, n) + d3(&t, n) <= b - 1) && (!use_joint() || j_ok(&t, n, b - 1 - g))
                 }).collect();
             }
             next.append(&mut part);
@@ -1201,7 +1203,7 @@ fn prove_w<const W: usize>(n: usize, b: u32) {
             if (late_dprime() && use_dprime()) || use_joint() {
                 part = part.into_par_iter().filter(|k| {
                     let t = unpack_w::<W>(k, n);
-                    (!(late_dprime() && use_dprime()) || g + h1(&t, n) + d3(&t, n) <= b - 1) && (!use_joint() || j_ok(&t, n, b - 1 - g))
+                    (use_joint() || !(late_dprime() && use_dprime()) || g + h1(&t, n) + d3(&t, n) <= b - 1) && (!use_joint() || j_ok(&t, n, b - 1 - g))
                 }).collect();
             }
             next.append(&mut part);
