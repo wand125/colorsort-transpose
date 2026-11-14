@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ball-sort transposition: replay</title>
+<meta name="description" content="Animated replay of the best known solutions of the ball-sort transposition puzzle for 2 to 24 colours.">
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@700&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap" rel="stylesheet">
+<style id="css">
+:root{
+  /* layout: a masthead where ヨコ runs across and タテ runs down; one machined-steel box of N+1 lanes with a dark
+     lining and a gold inlay, lit from the upper left on veined stone; steel and gold carry the chrome, the balls the color */
+  --bg:#e4e6ea;            /* pale stone */
+  --bg-glow:#f8f9fa;
+  --vein:rgba(150,118,58,.26);
+  --ink:#151920;
+  --muted:#565e69;
+  --m1:#fcfdfe; --m2:#dde1e6; --m3:#bcc3cc; --m4:#eceff2;   /* steel: light, body, turn, bounce */
+  --m-edge:#8d96a1; --m-side:#98a1ac;
+  --g1:#f8e7b0; --g2:#d4ab55; --g3:#a67c2c; --g4:#ecd08a;   /* gold, the same four stops */
+  --key:#ffffff; --key-low:#edf0f4; --key-side:#c2cad4; --line:#c3ccd6;   /* the plain raised keys */
+  --on-accent:#ffffff;
+  --floor:#1a1e24;         /* the box's dark lining */
+  --pit:rgba(0,0,0,.5);    /* shadow inside the lining */
+  --accent:#8a6117;        /* gold deep enough for text and focus rings on stone */
+  --title:linear-gradient(180deg,#4a535f,#161b22 47%,#39414c 53%,#10141a);
+  --title-gold:linear-gradient(180deg,#b98a2e,#8a6117 47%,#6f4c0e 53%,#a97b24);
+  --hl:rgba(255,255,255,.9);
+  --shade:rgba(15,20,28,.18);
+  --shadow:rgba(15,20,28,.42);
+  --metal:linear-gradient(180deg,var(--m1),var(--m2) 46%,var(--m3) 54%,var(--m4));
+  --gold:linear-gradient(180deg,var(--g1),var(--g2) 46%,var(--g3) 54%,var(--g4));
+  --font-display:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho","YuMincho",serif;
+  --font-body:"Zen Kaku Gothic New","Hiragino Sans","Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0a0c0f; --bg-glow:#1a1e24; --vein:rgba(214,178,110,.2); --ink:#eef0f2; --muted:#a7afb9;
+    --m1:#5f6875; --m2:#3a424d; --m3:#242a33; --m4:#454d59; --m-edge:#0f1216; --m-side:#07090b;
+    --floor:#06080a; --accent:#e3c27a; --on-accent:#1d1608;
+    --key:#36404d; --key-low:#29313c; --key-side:#141920; --line:#4a5562;
+    --title:linear-gradient(180deg,#ffffff,#b9c1cb 47%,#8d96a2 53%,#e6eaee);
+    --title-gold:linear-gradient(180deg,#fbeebe,#dcb45c 47%,#b0842f 53%,#f0d590);
+    --hl:rgba(255,255,255,.17); --shade:rgba(0,0,0,.42); --shadow:rgba(0,0,0,.78);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0a0c0f; --bg-glow:#1a1e24; --vein:rgba(214,178,110,.2); --ink:#eef0f2; --muted:#a7afb9;
+  --m1:#5f6875; --m2:#3a424d; --m3:#242a33; --m4:#454d59; --m-edge:#0f1216; --m-side:#07090b;
+  --floor:#06080a; --accent:#e3c27a; --on-accent:#1d1608;
+    --key:#36404d; --key-low:#29313c; --key-side:#141920; --line:#4a5562;
+  --title:linear-gradient(180deg,#ffffff,#b9c1cb 47%,#8d96a2 53%,#e6eaee);
+  --title-gold:linear-gradient(180deg,#fbeebe,#dcb45c 47%,#b0842f 53%,#f0d590);
+  --hl:rgba(255,255,255,.17); --shade:rgba(0,0,0,.42); --shadow:rgba(0,0,0,.78);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%; overscroll-behavior:none}
+body{
+  margin:0; color:var(--ink);
+  background:radial-gradient(130% 62% at 50% -8%, var(--bg-glow), transparent 72%) no-repeat, var(--bg);
+  font-family:var(--font-body); font-weight:500; font-size:15px; line-height:1.55;
+  -webkit-text-size-adjust:100%; -webkit-tap-highlight-color:transparent;
+  -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;
+}
+/* stone veining: a drawn mask, tinted from the palette so it follows the theme */
+body::before{content:""; position:fixed; inset:0; z-index:-1; pointer-events:none; background:var(--vein); opacity:0;
+  -webkit-mask-image:var(--marble); mask-image:var(--marble); -webkit-mask-size:560px 560px; mask-size:560px 560px;
+  transition:opacity .8s ease}
+.tex body::before{opacity:1}
+button{font:inherit; color:inherit}
+.app{max-width:560px; margin:0 auto; padding:14px 16px 32px; display:flex; flex-direction:column; gap:10px}
+
+/* masthead */
+.mast{display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:8px 12px}
+.title{margin:0; display:flex; align-items:flex-end; gap:3px; font-family:var(--font-display); font-weight:700; line-height:1;
+  filter:drop-shadow(0 1.5px 0 var(--hl))}
+.title .yoko{font-size:36px; letter-spacing:.06em; color:var(--ink)}
+.title .tate{font-size:36px; writing-mode:vertical-rl; letter-spacing:.02em; color:var(--accent)}
+.title .p{font-size:17px; color:var(--muted); padding-bottom:5px}
+@supports ((-webkit-background-clip:text) or (background-clip:text)){
+  .title .yoko{background:var(--title); -webkit-background-clip:text; background-clip:text; color:transparent}
+  .title .tate{background:var(--title-gold); -webkit-background-clip:text; background-clip:text; color:transparent}
+}
+@media (max-width:379px){ .title .yoko,.title .tate{font-size:30px} .title .p{font-size:15px} }
+.stats{margin:0 0 3px; display:flex; padding:7px 2px 6px; border-radius:10px;
+  background:var(--brush, none) 0 0 / 128px 64px, var(--metal);   /* brushed grain (drawn in script) over a four-stop sheen */
+  box-shadow:inset 0 1.5px 0 var(--hl), inset 0 -1px 0 var(--shade), 0 0 0 1px var(--m-edge), 0 3px 0 1px var(--m-side), 0 14px 16px -12px var(--shadow)}
+.stats div{display:flex; flex-direction:column; align-items:center; min-width:42px; padding:0 8px}
+.stats div + div{border-left:1px solid var(--shade); box-shadow:inset 1px 0 0 var(--hl)}   /* an engraved groove */
+.stats dt{font-size:10px; color:var(--muted); letter-spacing:.16em}
+.stats dd{margin:0; font-size:18px; font-weight:700; line-height:1.25; font-variant-numeric:tabular-nums}
+.stats dd.bump{animation:bump .26s ease-out}
+@keyframes bump{40%{transform:translateY(-3px) scale(1.14)}}
+
+.hint{margin:0; min-height:1.55em; font-size:13px; color:var(--muted)}
+
+.cap{display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:12px;
+  color:var(--muted); white-space:nowrap; letter-spacing:.04em; font-variant-numeric:tabular-nums}
+.cap b{color:var(--ink); font-weight:700}
+.pips{display:inline-flex; gap:3px; margin:0 6px 0 5px; vertical-align:middle}
+.pip{width:10px; height:10px; border-radius:50%; background:var(--shade); box-shadow:inset 0 1px 1.5px var(--shadow), 0 1px 0 var(--hl)}
+.pip.on{background:var(--c); box-shadow:0 1px 1.5px var(--shadow)}
+.cap.dense .pips{gap:2px}
+.cap.dense .pip{width:8px; height:8px}
+
+/* the box belongs to the drag, so the browser never scrolls or selects from it */
+.stage-wrap{padding:11px 11px 23px}
+.stage{
+  --n:6; --cols:7; --cell:44px;
+  position:relative; margin:0 auto; touch-action:none; cursor:grab;
+  width:min(100%, max(236px, calc((100vh - 338px) * var(--cols) / (var(--n) + 1))));
+  width:min(100%, max(236px, calc((100dvh - 338px) * var(--cols) / (var(--n) + 1))));
+}
+/* a shallow steel box: brushed frame with bevelled edges, a gold inlay around a dark lining, and polished
+   partition bars that stop short of the top, leaving one open row where a lifted ball travels */
+.board-bg{position:absolute; inset:-11px; border-radius:11px;
+  background:var(--brush, none) 0 0 / 128px 64px,
+    linear-gradient(135deg, var(--m1), var(--m2) 28%, var(--m3) 52%, var(--m1) 74%, var(--m2));
+  box-shadow:inset 0 1.5px 0 var(--hl), inset 1.5px 0 0 var(--hl), inset 0 -1.5px 0 var(--shade), inset -1.5px 0 0 var(--shade),
+    0 0 0 1px var(--m-edge), 0 7px 0 1px var(--m-side), 0 30px 36px -14px var(--shadow), 0 13px 10px -3px var(--shade)}
+.floor-bg{position:absolute; inset:0; border-radius:3px; background:var(--floor);
+  box-shadow:0 0 0 1.5px var(--g2), 0 0 0 2.5px var(--m-edge), inset 0 7px 10px -3px var(--pit), inset 7px 0 10px -6px var(--pit)}
+.wall{position:absolute; top:var(--lane-top); bottom:0; width:clamp(3px, calc(var(--cell) * .1), 6px);
+  transform:translateX(-50%); border-radius:3px 3px 0 0; pointer-events:none;
+  background:linear-gradient(90deg, var(--m3), var(--m1) 36%, var(--m2) 64%, var(--m3));
+  box-shadow:2px 1px 3px var(--pit)}
+.lane{--fl:transparent;
+  position:absolute; top:var(--lane-top); bottom:0; width:calc(100% / var(--cols)); cursor:grab; touch-action:none;
+  background:linear-gradient(90deg, var(--pit), transparent 34%), var(--fl)}
+.dragging .lane{cursor:grabbing}
+.lane.done{--fl:color-mix(in srgb, var(--c) 36%, var(--floor))}
+.lane.target{--fl:color-mix(in srgb, var(--g2) 32%, var(--floor))}
+.lane:focus{outline:none}
+.lane:focus-visible{outline:3px solid var(--g2); outline-offset:-3px}
+.ghost{position:absolute; left:0; width:100%; aspect-ratio:1; display:none; pointer-events:none}
+.ghost::before{content:""; position:absolute; inset:10%; border-radius:50%; border:2px solid var(--g4);
+  box-shadow:0 0 7px var(--g2), inset 0 0 6px var(--g3);
+  animation:pulse .7s ease-in-out infinite alternate}
+@keyframes pulse{to{transform:scale(.86); opacity:.55}}
+.lane.target .ghost,.holding .lane.open:not(.src) .ghost{display:block}
+
+/* balls: the skin is drawn per color in script; the gradients below only show if that drawing is unavailable */
+.ball{position:absolute; left:0; top:0; width:calc(100% / var(--cols)); aspect-ratio:1; pointer-events:none;
+  font-size:var(--cell); transition:transform .24s cubic-bezier(.34,1.32,.5,1)}
+.instant .ball{transition:none}
+.ball.fly{z-index:5}
+.ball.sel{z-index:6}
+.ball.drag{z-index:8; transition:transform .12s ease-out}
+.ball.drag.no i{opacity:.5}
+.ball i{position:absolute; inset:5%; border-radius:50%; display:grid; place-items:center;
+  box-shadow:.03em .06em .08em rgba(0,0,0,.6), 0 .05em .2em color-mix(in srgb, var(--base) 34%, transparent);   /* shadow, then its color glowing on the lining */
+  transition:transform .16s ease, box-shadow .16s ease}
+.ball i.matte{background:
+    radial-gradient(circle at 33% 26%, rgba(255,255,255,.5) 0, rgba(255,255,255,0) 26%),
+    radial-gradient(circle at 36% 30%, var(--hi) 0, var(--base) 52%, var(--lo) 100%)}
+.ball i.chrome{background:
+    radial-gradient(circle at 31% 23%, #fff 0, rgba(255,255,255,.9) 5%, rgba(255,255,255,0) 15%),
+    radial-gradient(ellipse 62% 26% at 52% 80%, rgba(255,255,255,.34), rgba(255,255,255,0) 72%),
+    radial-gradient(circle at 42% 36%, var(--hi) 0, var(--base) 34%, var(--lo) 74%, var(--base) 100%)}
+.ball.sel i{transform:scale(1.1);
+  box-shadow:0 0 0 .04em var(--floor), 0 0 0 .09em var(--g2), .05em .17em .14em rgba(0,0,0,.5)}
+.ball.drag i{transform:scale(1.12);
+  box-shadow:0 0 0 .03em var(--g4), 0 0 .16em var(--g2), .08em .2em .2em rgba(0,0,0,.6)}
+.ball.land i{animation:land .3s ease-out}
+@keyframes land{0%{transform:translateY(5%) scale(1.1,.9)} 50%{transform:translateY(-2%) scale(.97,1.03)}}
+.ball b{display:none}
+.nums .ball b{display:grid; place-items:center; width:1.6em; height:1.6em; border-radius:50%;
+  background:rgba(10,15,25,.7); color:#fff; font:700 .29em/1 var(--font-body); font-variant-numeric:tabular-nums}
+.ball.cheer i{animation:hop .5s ease both; animation-delay:calc(var(--k) * 35ms)}
+@keyframes hop{40%{transform:translateY(-16%) scale(1.07)}}
+
+/* controls: plain raised keys that sink when pressed */
+.controls{display:flex; flex-direction:column; gap:10px; margin-top:2px}
+.row{display:flex; flex-wrap:wrap; align-items:center; gap:8px}
+.btn,.chip{appearance:none; -webkit-appearance:none; min-height:44px; padding:8px 16px; border-radius:999px;
+  border:1px solid var(--line); background:linear-gradient(180deg, var(--key), var(--key-low)); color:var(--ink);
+  font-weight:700; cursor:pointer; touch-action:manipulation;
+  box-shadow:inset 0 1.5px 0 var(--hl), 0 2.5px 0 var(--key-side), 0 10px 12px -9px var(--shadow);
+  transition:transform .08s ease, box-shadow .08s ease}
+.btn:active:not(:disabled),.chip:active{transform:translateY(2px);
+  box-shadow:inset 0 1.5px 0 var(--hl), 0 .5px 0 var(--key-side), 0 3px 5px -3px var(--shadow)}
+.btn:disabled{opacity:.5; cursor:default}
+.btn.solid{background:linear-gradient(180deg, color-mix(in srgb, var(--accent) 84%, white), var(--accent));
+  border-color:var(--accent); color:var(--on-accent)}
+.chip{min-width:58px; padding:8px 10px}
+.chip[aria-pressed="true"]{background:linear-gradient(180deg, color-mix(in srgb, var(--ink) 82%, var(--bg)), var(--ink));
+  border-color:var(--ink); color:var(--bg);
+  box-shadow:inset 0 1.5px 0 color-mix(in srgb, var(--bg) 26%, transparent), 0 2.5px 0 color-mix(in srgb, var(--ink) 55%, black), 0 10px 12px -9px var(--shadow)}
+.btn.confirm,.chip.confirm{border-color:var(--accent);
+  box-shadow:inset 0 1.5px 0 var(--hl), 0 2.5px 0 var(--key-side), 0 0 0 3px color-mix(in srgb, var(--accent) 34%, transparent)}
+.btn:focus-visible,.chip:focus-visible,.check input:focus-visible{outline:3px solid var(--accent); outline-offset:2px}
+.rlabel{font-size:11px; color:var(--muted); letter-spacing:.16em; margin-right:2px}
+.check{display:inline-flex; align-items:center; gap:7px; min-height:44px; margin-left:auto; font-size:14px; cursor:pointer}
+.check input{width:20px; height:20px; margin:0; accent-color:var(--g3)}
+
+/* how to */
+.howto{margin-top:12px; padding-top:14px; border-top:1px solid var(--m-edge); max-width:34em}
+.howto h2{margin:0 0 6px; font:700 20px/1.3 var(--font-display); letter-spacing:.06em; text-wrap:balance}
+.howto ol{margin:0; padding-left:1.4em}
+.howto p{margin:8px 0 0; color:var(--muted); font-size:14px}
+
+.howto .demo{display:flex; flex-wrap:wrap; align-items:center; gap:2px 14px; margin-top:16px; font-size:12px}
+.link{appearance:none; -webkit-appearance:none; border:0; background:none; padding:0; min-height:32px; color:var(--muted);
+  font-size:12px; text-decoration:underline; text-underline-offset:3px; cursor:pointer}
+.link:focus-visible{outline:3px solid var(--accent); outline-offset:2px}
+.fast .ball{transition-duration:.1s}
+.fast .ball.drag{transition-duration:.05s}
+
+/* finish */
+.win{position:fixed; inset:0; z-index:20; display:grid; place-items:center; padding:16px;
+  background:color-mix(in srgb, var(--bg) 62%, transparent); -webkit-backdrop-filter:blur(5px); backdrop-filter:blur(5px)}
+.win[hidden]{display:none}
+.card{width:100%; max-width:340px; padding:20px 20px 22px; border-radius:14px;
+  background:var(--brush, none) 0 0 / 128px 64px, linear-gradient(135deg, var(--m1), var(--m2) 30%, var(--m3) 58%, var(--m4));
+  box-shadow:inset 0 1.5px 0 var(--hl), inset 0 -1.5px 0 var(--shade), 0 0 0 1px var(--m-edge), 0 0 0 2.5px var(--g2), 0 0 0 3.5px var(--m-edge),
+    0 9px 0 3px var(--m-side), 0 38px 50px -18px var(--shadow);
+  animation:rise .4s cubic-bezier(.3,1.3,.5,1) both}
+@keyframes rise{from{transform:translateY(18px) scale(.96); opacity:0}}
+.trophy{display:flex; gap:4px; margin-bottom:12px}
+.mini{flex:0 1 24px; aspect-ratio:1; border-radius:50%; background:var(--c); box-shadow:.5px 1.5px 2px var(--shadow)}
+.card h2{margin:0 0 8px; font:700 30px/1.2 var(--font-display); letter-spacing:.04em; text-wrap:balance}
+.card h2 span{color:var(--accent)}
+@supports ((-webkit-background-clip:text) or (background-clip:text)){
+  .card h2 span{background:var(--title-gold); -webkit-background-clip:text; background-clip:text; color:transparent}
+}
+.card p{margin:0 0 4px; font-variant-numeric:tabular-nums}
+.card .sub{color:var(--muted); font-size:14px}
+.card .row{margin-top:16px}
+#confetti{position:fixed; inset:0; width:100%; height:100%; pointer-events:none; z-index:30}
+
+@media (prefers-reduced-motion:reduce){
+  .ball,.ball i{transition:none}
+  .ball.cheer i,.ball.land i,.ghost::before,.card,.stats dd.bump{animation:none}
+}
+</style>
+<style>
+/* 再生ページ用の追加（盤面と玉の見た目は「ヨコをタテに」本体のものをそのまま使う） */
+.app{max-width:780px}
+.top{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:6px 16px}
+.top h1{margin:0;font:700 24px/1.2 var(--font-display);letter-spacing:.04em}
+.top a{color:var(--accent);font-size:13px;margin-left:10px}
+.info{margin:0;font-size:14px;font-variant-numeric:tabular-nums}
+.info b{font-size:17px}.info small{display:block;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.chip.small{min-height:36px;min-width:42px;padding:4px 8px;font-size:13px}
+.btn.small{min-height:40px;padding:6px 13px}
+.stage{cursor:default;width:min(100%, max(236px, calc((100vh - 300px) * var(--cols) / (var(--n) + 1))));width:min(100%, max(236px, calc((100dvh - 300px) * var(--cols) / (var(--n) + 1))))}.lane{cursor:default}
+.stage .ball{transition-duration:var(--dur,.24s);will-change:transform}   /* 玉ごとに描画を分け、1 個動かすたびに全体を描き直さない */
+.stage .ball.drag{transition-duration:var(--dur2,.12s)}
+/* 速い再生のあいだは、動きの補間と影を止めて描画を軽くする */
+.stage.turbo .ball{transition:none}
+.stage.turbo .ball i{box-shadow:none;transition:none}
+.scrub{display:flex;align-items:center;gap:10px;font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted)}
+.scrub input{flex:1;min-width:0;accent-color:var(--g3);height:28px}
+.scrub b{color:var(--ink);min-width:6.5em;text-align:right}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top"><h1>Replay of the best known solutions</h1><a href="index.html">← Overview</a> <a href="data.html">Data</a></header>
+  <div class="row" role="group" aria-label="Number of colours" id="sizes"><span class="rlabel">Colours</span></div>
+  <p class="info" id="info">Loading…</p>
+  <div class="cap" id="cap"><span>Finished lanes<span class="pips" id="pips" aria-hidden="true"></span><b id="doneCount">0/0</b></span><span id="last"></span></div>
+  <div class="stage-wrap"><div class="stage" id="stage"></div></div>
+  <div class="scrub"><input type="range" id="pos" min="0" max="0" value="0" step="1" aria-label="Move number"><b id="count">0 / 0</b></div>
+  <div class="controls">
+    <div class="row">
+      <button type="button" class="btn small" id="first">Start</button>
+      <button type="button" class="btn small" id="back">Back</button>
+      <button type="button" class="btn small solid" id="play">Play</button>
+      <button type="button" class="btn small" id="fwd">Step</button>
+      <button type="button" class="btn small" id="end">End</button>
+    </div>
+    <div class="row" role="group" aria-label="Speed">
+      <span class="rlabel">Speed</span>
+      <button type="button" class="chip small" data-speed="1">×1</button>
+      <button type="button" class="chip small" data-speed="3">×3</button>
+      <button type="button" class="chip small" data-speed="10">×10</button>
+      <button type="button" class="chip small" data-speed="40">×40</button>
+      <label class="check" for="nums"><input type="checkbox" id="nums">Show numbers</label>
+    </div>
+  </div>
+</div>
+<script>
+(() => {
+'use strict';
+const PALETTE = [
+  {name:'赤',       hi:'#ff9488', base:'#e3242b', lo:'#7d0b14', chrome:false},
+  {name:'メタル赤', hi:'#ff7d8c', base:'#c0102e', lo:'#2e0208', chrome:true},
+  {name:'メタル緑', hi:'#84f0ae', base:'#0f9d4d', lo:'#012811', chrome:true},
+  {name:'黄',       hi:'#fff3a6', base:'#f5c518', lo:'#a87a00', chrome:false},
+  {name:'金',       hi:'#fff3c4', base:'#f0c060', lo:'#4a2c00', chrome:true},
+  {name:'紫',       hi:'#bba5f5', base:'#7446d0', lo:'#2f1570', chrome:false},
+  {name:'メタル紫', hi:'#f59bfa', base:'#a524b0', lo:'#280330', chrome:true},
+  {name:'青',       hi:'#9ad6ff', base:'#1f8ae6', lo:'#07427f', chrome:false},
+  {name:'メタル紺', hi:'#86b0f7', base:'#1a4bb0', lo:'#030d2b', chrome:true},
+  {name:'ピンク',   hi:'#ffc2dd', base:'#ff5fa5', lo:'#a81958', chrome:false},
+  {name:'銀',       hi:'#ffffff', base:'#d6dbe2', lo:'#484d56', chrome:true},
+  {name:'水色',     hi:'#c4f8f1', base:'#40d0c0', lo:'#0c7a6f', chrome:false}
+];
+const SETS = {4:[0,3,7,11], 6:[0,2,3,7,9,11], 8:[0,2,3,4,5,7,9,11], 12:[0,1,2,3,4,5,6,7,8,9,10,11]};
+function drawBall(col) {
+  const S = 192, cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const ctx = cv.getContext('2d'), img = ctx.createImageData(S, S), px = img.data;
+  const F0 = [1, 3, 5].map(k => Math.pow(parseInt(col.base.slice(k, k + 2), 16) / 255, 2.2));   // the metal's color, in linear light
+  const satin = !col.chrome;
+  const ss = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const unit = a => { const l = Math.hypot(a[0], a[1], a[2]); return [a[0] / l, a[1] / l, a[2] / l]; };
+  const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const up = unit([0, -.42, .91]);                     // we look down into the box, tipped a little toward the player
+  // Lights as [direction, half-width, half-height, edge softness, strength, satin spread].
+  // Width runs around the ball, height runs from its middle toward its rim.
+  // The last number is how far a satin surface smears that light.
+  const lights = [
+    [[-.45, -.55, .70], .48, .24, .06, 9, 1],          // key: a wide softbox, upper left
+    [[ .96, -.14, .12], .55, .08, .05, 5, .8],         // a long bar on the right: a thin arc near the edge
+    [[ 0, -.50, -.86], .28, .13, .10, 2, .1],          // behind and above: a short rim light on the top edge
+    [[-.55,  .65, .15], .10, .10, .16, 1.3, 1]         // low kicker, lower left
+  ].map(([d, w, h, s, i, q]) => {
+    d = unit(d);
+    const t1 = unit(cross(up, d)), t2 = cross(d, t1);
+    // satin spreads each light out (more around the ball than across it) and dims it to match
+    return satin ? {d, t1, t2, w, h, su: s + .5 * q, sv: s + .26 * q, i: i * w * h / ((w + .4 * q) * (h + .21 * q))}
+                 : {d, t1, t2, w, h, su: s, sv: s, i};
+  });
+  const grain = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
+  for (let j = 0; j < S; j++) for (let i = 0; i < S; i++) {
+    const x = (i + .5) / S * 2 - 1, y = (j + .5) / S * 2 - 1, r2 = x * x + y * y;
+    if (r2 >= 1) continue;
+    const z = Math.sqrt(1 - r2), o = (j * S + i) * 4;
+    const R = [2 * z * x, 2 * z * y, 2 * z * z - 1], ud = dot(R, up);          // mirror direction, and how far it points up
+    let e = .10 + .55 * Math.pow(ss(-.1, 1, ud), 1.5) + .05 * ss(.1, -.7, ud);  // dim studio above, the dark box below
+    for (const L of lights) {
+      const dd = dot(R, L.d);
+      if (dd <= .12) continue;
+      const fu = Math.max(0, Math.abs(dot(R, L.t1) / dd) - L.w) / L.su;
+      const fv = Math.max(0, Math.abs(dot(R, L.t2) / dd) - L.h) / L.sv;
+      e += L.i * Math.exp(-fu * fu - fv * fv) * ss(.12, .3, dd);
+    }
+    if (satin) e *= 1 + .2 * (grain(i >> 1, j >> 1) - .5);                      // fine grain of a brushed surface
+    const fz = Math.pow(1 - z, 5);                                              // reflections strengthen toward the edge
+    const coat = satin ? .02 + .15 * fz : .05 + .6 * fz;                        // clear layer that reflects white
+    for (let c = 0; c < 3; c++) {
+      const v = e * (coat + (1 - coat) * (F0[c] + (1 - F0[c]) * fz * .5));
+      px[o + c] = 255 * Math.pow(1 - Math.exp(-1.7 * v), 1 / 2.2);              // exposure, then display gamma
+    }
+    px[o + 3] = 255 * Math.min(1, (1 - Math.sqrt(r2)) * S / 2.6);
+  }
+  ctx.putImageData(img, 0, 0);
+  return cv;
+}
+
+
+function drawBrush() {
+  const W = 256, H = 128, cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const ctx = cv.getContext('2d');
+  let seed = 5;
+  const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+  ctx.lineWidth = 1;
+  for (let k = 0; k < 900; k++) {
+    const y = Math.floor(rnd() * H) + .5, x = rnd() * W, len = 30 + rnd() * 180, a = .03 + rnd() * .07;
+    ctx.strokeStyle = rnd() < .5 ? 'rgba(255,255,255,' + a + ')' : 'rgba(0,0,0,' + a * .8 + ')';
+    for (const off of [0, -W]) {                         // drawn twice so scratches wrap across the tile edge
+      ctx.beginPath(); ctx.moveTo(x + off, y); ctx.lineTo(x + off + len, y); ctx.stroke();
+    }
+  }
+  return cv.toDataURL('image/png');
+}
+
+
+const $ = id => document.getElementById(id);
+const el = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
+const stage = $('stage'), pos = $('pos'), numsBox = $('nums');
+let DATA = {}, N = 0, COLS = 0, cols = [], lanes = [], balls = [], laneEls = [], list = [];
+let k = 0, playing = false, timer = 0, speed = 1, lifted = null, numsTouched = false;
+
+// 12 色までは本体の配色。13 色以上は色相を等分して作り、つや消しと鏡面を交互にする。
+const hex = (h, s, l) => {
+  const f = n => { const q = (n + h / 30) % 12, a = s * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(q - 3, 9 - q, 1)))).toString(16).padStart(2, '0'); };
+  return '#' + f(0) + f(8) + f(4);
+};
+function colorsFor(n) {
+  if (n <= 12) return (SETS[n] || [0, 7, 3, 2, 5, 9, 11, 10, 4, 8, 6, 1].slice(0, n).sort((a, b) => a - b)).map(i => PALETTE[i]);   // 見分けやすい順に n 色
+  return Array.from({length: n}, (_, i) => {
+    const h = i * 360 / n, chrome = i % 2 === 1, l = chrome ? .40 : .54;
+    return {name: 'colour ' + (i + 1), hi: hex(h, .9, .8), base: hex(h, .82, l), lo: hex(h, .9, .16), chrome};
+  });
+}
+const skins = {};
+function skin(col) {
+  const key = col.base + col.chrome;
+  if (!(key in skins)) { try { skins[key] = 'url(' + drawBall(col).toDataURL('image/png') + ') center/100% 100% no-repeat'; } catch (e) { skins[key] = ''; } }
+  return skins[key];
+}
+
+function place(node, x, y) { node.style.transform = 'translate(' + (x * 100) + '%,' + (y * 100) + '%)'; }
+function measure() { const w = stage.getBoundingClientRect().width; if (w) stage.style.setProperty('--cell', (w / COLS) + 'px'); }
+function instant(fn) {
+  stage.classList.add('instant'); fn();
+  requestAnimationFrame(() => requestAnimationFrame(() => stage.classList.remove('instant')));
+}
+
+function build(n) {
+  stop();
+  N = n; COLS = N + 1; cols = colorsFor(N);
+  const s = DATA[N].s; list = [];
+  for (let i = 0; i < s.length; i += 2) list.push([parseInt(s[i], 36), parseInt(s[i + 1], 36)]);
+  stage.textContent = '';
+  stage.style.setProperty('--n', N); stage.style.setProperty('--cols', COLS);
+  stage.style.aspectRatio = COLS + ' / ' + (N + 1);
+  stage.style.setProperty('--lane-top', (100 / (N + 1)) + '%');
+  stage.append(el('div', 'board-bg'), el('div', 'floor-bg'));
+  laneEls = [];
+  for (let i = 0; i < COLS; i++) { const b = el('div', 'lane'); b.style.left = (i * 100 / COLS) + '%'; stage.append(b); laneEls.push(b); }
+  for (let i = 1; i < COLS; i++) { const w = el('div', 'wall'); w.style.left = (i * 100 / COLS) + '%'; stage.append(w); }
+  balls = [];
+  for (let lane = 1; lane <= N; lane++) for (let c = 0; c < N; c++) {
+    const d = el('div', 'ball'), sk = el('i', cols[c].chrome ? 'chrome' : 'matte'), num = el('b');
+    sk.style.setProperty('--hi', cols[c].hi); sk.style.setProperty('--base', cols[c].base); sk.style.setProperty('--lo', cols[c].lo);
+    const bg = skin(cols[c]); if (bg) sk.style.background = bg;
+    num.textContent = c + 1; sk.append(num); d.append(sk); stage.append(d);
+    balls.push({c, el: d});
+  }
+  $('pips').textContent = '';
+  cols.forEach(c => { const p = el('span', 'pip'); p.style.setProperty('--c', c.base); $('pips').append(p); });
+  $('cap').classList.toggle('dense', N >= 12);
+  if (!numsTouched) numsBox.checked = N > 12;
+  stage.classList.toggle('nums', numsBox.checked);
+  const d = DATA[N];
+  $('info').innerHTML = '<b>' + N + ' colours, ' + d.moves + ' moves.</b> ' +
+    (d.exact ? 'Proved optimal.' : 'Best known; the lower bound is ' + d.lower + ', so this may not be optimal.') +
+    '<small></small>';
+  $('info').querySelector('small').textContent = d.kind_en + (d.file ? ' · ' + d.file : '');
+  pos.max = list.length;
+  [...document.querySelectorAll('#sizes .chip')].forEach(c => c.setAttribute('aria-pressed', String(+c.dataset.n === N)));
+  try { history.replaceState(null, '', '?n=' + N); } catch (e) {}
+  doneOf = []; hudDone = hudPlay = null;
+  measure();
+  jump(0);
+}
+
+function setState(to) {
+  lanes = [[]].concat(Array.from({length: N}, (_, i) => Array.from({length: N}, (_, c) => i * N + c)));
+  for (let i = 0; i < to; i++) { const [a, b] = list[i]; lanes[b].push(lanes[a].pop()); }
+  k = to;
+}
+// 列 i がそろっているか（そろっていればその色、でなければ −1）。変わったときだけ画面に書く。
+let doneOf = [];
+function laneState(i) {
+  const lane = lanes[i];
+  const c = (lane.length === N && lane.every(id => balls[id].c === balls[lane[0]].c)) ? balls[lane[0]].c : -1;
+  if (doneOf[i] === c) return;
+  doneOf[i] = c;
+  laneEls[i].classList.toggle('done', c >= 0);
+  if (c >= 0) laneEls[i].style.setProperty('--c', cols[c].base);
+}
+// 手数・スライダー・ボタンなど、盤面以外の表示。
+let hudDone = null, hudPlay = null;
+function hud() {
+  const doneColors = new Set(doneOf.filter(c => c >= 0)), key = [...doneColors].sort().join(',');
+  if (key !== hudDone) {
+    hudDone = key;
+    [...$('pips').children].forEach((p, c) => p.classList.toggle('on', doneColors.has(c)));
+    $('doneCount').textContent = doneColors.size + '/' + N;
+  }
+  $('count').textContent = k + ' / ' + list.length;
+  pos.value = k;
+  $('last').textContent = k ? ('move ' + k + ': lane ' + list[k - 1][0] + ' → lane ' + list[k - 1][1]) : '';
+  const label = playing ? 'Pause' : (k >= list.length ? 'Again' : 'Play');
+  if (label !== hudPlay) { hudPlay = label; $('play').textContent = label; }
+  $('back').disabled = $('first').disabled = k === 0;
+  $('fwd').disabled = $('end').disabled = k >= list.length;
+}
+// 盤面を全部置き直す（色数の切り替え、スライダー、戻るで使う）。
+function render() {
+  lanes.forEach((lane, i) => {
+    lane.forEach((id, h) => { if (balls[id].el !== lifted) place(balls[id].el, i, N - h); });
+    laneState(i);
+  });
+  hud();
+}
+// 1 手だけ進める。動いた玉と、関係する 2 列だけを書き換える。
+function applyMove() {
+  const [a, b] = list[k], id = lanes[a].pop();
+  lanes[b].push(id); k++;
+  place(balls[id].el, b, N - (lanes[b].length - 1));
+  laneState(a); laneState(b);
+}
+function jump(to) { instant(() => { dropLift(); setState(Math.max(0, Math.min(list.length, to))); render(); }); }
+function dropLift() { if (lifted) { lifted.classList.remove('drag'); lifted = null; } }
+let raf = 0, clock = 0;
+function stop() { playing = false; clearTimeout(timer); cancelAnimationFrame(raf); clock = 0; dropLift(); if (N) render(); }
+
+// ゆっくり（×1・×3）: 上の段へ持ち上げる → 横へ運ぶ → 落とす（本体の「お手本」と同じ動き）。
+function step(then) {
+  if (k >= list.length) { playing = false; hud(); return; }
+  const [a, b] = list[k], node = balls[lanes[a][lanes[a].length - 1]].el;
+  const t = speed >= 3 ? 55 : 160;
+  lifted = node; node.classList.add('drag'); place(node, a, 0);
+  timer = setTimeout(() => {
+    place(node, b, 0);
+    timer = setTimeout(() => {
+      node.classList.remove('drag'); lifted = null;
+      applyMove(); hud();
+      timer = setTimeout(then, t * 1.3);
+    }, t);
+  }, t);
+}
+// 速い（×10 以上）: 経過時間から「いま何手目まで進んでいるはずか」を決め、描画 1 回ぶんでまとめて進める。
+// 描画が遅い端末でも、進み方が時間どおりになり、途中で止まって見えない。
+function fast(ts) {
+  if (!playing) return;
+  if (speed < 10) { clock = 0; return loop(); }
+  if (!clock) clock = ts;
+  const per = 400 / speed;                                  // 1 手あたりのミリ秒（×10 で 40、×40 で 10）
+  const cap = Math.max(2, Math.ceil(250 / per));           // 描画 1 回で進めるのは 0.25 秒ぶんまで
+  let due = Math.floor((ts - clock) / per);
+  if (due > 0) {
+    if (due > cap) { due = cap; clock = ts; }               // 描画が追いつかないときは、遅れを持ち越さない
+    else clock += due * per;
+    while (due-- > 0 && k < list.length) applyMove();
+    hud();
+  }
+  if (k >= list.length) { playing = false; clock = 0; hud(); return; }
+  raf = requestAnimationFrame(fast);
+}
+function loop() {
+  if (!playing) return;
+  if (speed >= 10) { clock = 0; raf = requestAnimationFrame(fast); }
+  else step(loop);
+}
+function play() {
+  if (playing) return stop();
+  if (k >= list.length) jump(0);
+  playing = true; hud(); timer = setTimeout(loop, 250);
+}
+function setSpeed(v) {
+  speed = v;
+  stage.classList.toggle('turbo', v >= 10);
+  stage.style.setProperty('--dur', v >= 3 ? '.1s' : '.24s');
+  stage.style.setProperty('--dur2', v >= 3 ? '.05s' : '.12s');
+  [...document.querySelectorAll('[data-speed]')].forEach(c => c.setAttribute('aria-pressed', String(+c.dataset.speed === v)));
+}
+
+$('play').addEventListener('click', play);
+$('first').addEventListener('click', () => { stop(); jump(0); });
+$('end').addEventListener('click', () => { stop(); jump(list.length); });
+$('back').addEventListener('click', () => { stop(); jump(k - 1); });
+$('fwd').addEventListener('click', () => { stop(); if (k >= list.length) return; if (speed >= 10) { applyMove(); hud(); } else step(() => {}); });
+pos.addEventListener('input', () => { const to = +pos.value; stop(); jump(to); });   // stop() が表示を描き直す前に値を取る
+numsBox.addEventListener('change', () => { numsTouched = true; stage.classList.toggle('nums', numsBox.checked); });
+document.querySelectorAll('[data-speed]').forEach(c => c.addEventListener('click', () => setSpeed(+c.dataset.speed)));
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input,button')) return;
+  if (e.key === ' ') { e.preventDefault(); play(); }
+  else if (e.key === 'ArrowRight') $('fwd').click();
+  else if (e.key === 'ArrowLeft') $('back').click();
+});
+if ('ResizeObserver' in window) new ResizeObserver(measure).observe(stage); else addEventListener('resize', measure);
+
+try { document.documentElement.style.setProperty('--brush', 'url(' + drawBrush() + ')'); } catch (e) {}
+setSpeed(1);
+fetch('data/solutions.json').then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }).then(data => {
+  DATA = data;
+  const sizes = Object.keys(data).map(Number).sort((a, b) => a - b);
+  for (const n of sizes) {
+    const c = el('button', 'chip small'); c.type = 'button'; c.dataset.n = n; c.textContent = n;
+    c.title = n + ' colours, ' + data[n].moves + ' moves' + (data[n].exact ? ' (optimal)' : '');
+    c.addEventListener('click', () => build(n)); $('sizes').append(c);
+  }
+  const want = +new URLSearchParams(location.search).get('n');
+  build(data[want] ? want : (data[6] ? 6 : sizes[0]));
+}).catch(err => { $('info').textContent = 'Could not load data/solutions.json: ' + err.message; });
+})();
+</script>
+</body>
+</html>

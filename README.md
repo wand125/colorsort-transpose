@@ -2,6 +2,8 @@
 
 日本語: [README.ja.md](README.ja.md)
 
+Website: <https://wand125.github.io/colorsort-transpose/> — overview, paper ([English](https://wand125.github.io/colorsort-transpose/paper.html), [日本語](https://wand125.github.io/colorsort-transpose/paper.ja.html)), [data](https://wand125.github.io/colorsort-transpose/data.html) and an [animated replay](https://wand125.github.io/colorsort-transpose/play.html) of the solutions.
+
 Computer-assisted results on a ball-sort ("colour sort") puzzle from one fixed starting position:
 exact optimal move counts for up to 6 colours, a general lower bound, verified upper bounds for up to 24 colours,
 and the code that produced them.
@@ -106,6 +108,7 @@ COLORLB_JOINT=1 ./target/release/colorlb prove 6 55   # no solution with at most
 | `tools/` | Verification, the construction for large N, re-optimisation of solution tails, Python prototypes of D′ and J |
 | `learn/` | Exact distances for N = 4 and a band of states for N = 5, used to test bounds and evaluation functions |
 | `results/` | Search results and proof logs |
+| `docs/` | The website (GitHub Pages). `python3 tools/build_site.py` regenerates its tables and data from `bounds.tsv` and `solutions/` |
 | `archive/` | Earlier versions of the beam search |
 
 ## Prior work

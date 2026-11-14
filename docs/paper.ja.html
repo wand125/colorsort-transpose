@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>色そろえパズルの転置問題：論文</title>
+<meta name="description" content="色そろえパズルの転置問題について、6 色までの最短手数の確定値、一般の下界、24 色までの検証済みの上界をまとめた。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=Noto+Serif+JP:wght@400;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400;1,8..60,600&display=swap">
+<link rel="stylesheet" href="style.css">
+<script>
+window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\\]"]] }, svg: { fontCache: "global" } };
+</script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.js"></script>
+</head>
+<body>
+<div class="page paper">
+<div class="bar">
+  <a class="site" href="index.html">Ball-sort transposition</a>
+  <nav aria-label="Site">
+    <a href="index.html">概要</a>
+    <a href="paper.html">Paper (English)</a>
+    <a href="paper.ja.html" lang="ja" aria-current="page">論文（日本語）</a>
+    <a href="data.html">データ</a>
+    <a href="play.html">再生</a>
+  </nav>
+</div>
+
+<header>
+  <p class="eyebrow">組合せパズル · プレプリント草稿</p>
+  <h1>\(N\) 本のスタックを空き 1 本で転置する：色そろえパズルは 6 色で 55 手、一般には \((3N^2-N-4)/2\) 手以上</h1>
+  <p class="byline">wand125 · 2026 年 11 月 · 確認用の草稿</p>
+</header>
+
+<section class="abstract" aria-label="要旨">
+  <p><strong>要旨.</strong> 色は \(N\) 色、玉は各色 \(N\) 個、スタックは \(N+1\) 本で容量は \(N\) とする。最初は 1 本が空で、残りのスタックはどれも下から色 \(1,\dots,N\) の順に積まれている。1 手で、あるスタックの一番上の玉を、満杯でない別のスタックへ移す。どのスタックも空か同じ色 \(N\) 個になるまでの最少手数を \(T(N)\) とする。本稿では、すべての \(N\) について \(T(N)\ge(3N^2-N-4)/2\) を証明し、計算機による探索で \(T(6)=55\) を決定する。\(T(2),\dots,T(5)=3,10,21,36\) は既知である。7 色では \(72\le T(7)\le78\) を得た。探索は、完成までの距離の下界 \(J\) で枝刈りした幅優先探索である。\(J\) を定義し、正しさを証明する。\(J\) を使うと、\(T(6)\ge55\) の証明でたどる状態は 471 万で済む。また、\(N\le24\) のすべてについて、機械的に検証した具体的な手順を与える。確定した値は \(N=6\) まで \((2N-1)(N-1)\) と一致する。それより大きい \(N\) でも一致するかは未解決で、\(N\ge8\) について私たちが知る最良の手順はこの式より長い。</p>
+</section>
+
+<nav class="toc" aria-label="目次">
+  <ol>
+    <li><a href="#intro">問題と結果</a></li>
+    <li><a href="#related">関連研究</a></li>
+    <li><a href="#prelim">不動の玉と家</a></li>
+    <li><a href="#hd">下界 \(h+D\) と一般の下界</a></li>
+    <li><a href="#j">下界 \(D'\) と \(J\)</a></li>
+    <li><a href="#search">証明のための探索</a></li>
+    <li><a href="#upper">上界</a></li>
+    <li><a href="#trust">結果の前提</a></li>
+    <li><a href="#open">未解決の問題</a></li>
+    <li><a href="#data">コードとデータ</a></li>
+  </ol>
+</nav>
+
+<section id="intro" class="prose">
+<h2>1. 問題と結果</h2>
+<p>扱うのは、「ボールソート」「色そろえ」と呼ばれるゲームのうち、玉をどの玉の上にも置ける版である。色は \(N\) 色、玉は各色 \(N\) 個、スタックは \(N+1\) 本で、これを<em>レーン</em>と呼ぶ。容量はどれも \(N\)。レーンには \(0,\dots,N\) の番号を付ける。初期配置では、レーン 0 が空で、レーン \(1,\dots,N\) はどれも下から色 \(1,2,\dots,N\) の順である。<em>1 手</em>は、空でないレーンの一番上の玉を、玉が \(N\) 個未満の別のレーンの一番上に置く操作である。どのレーンも空か同じ色 \(N\) 個である配置を<em>完成形</em>と呼ぶ。\(T(N)\) は、初期配置から完成形までの最少手数である。</p>
+<p>初期配置では横の段がどれも 1 色で、完成形では縦の列がどれも 1 色になる。つまり、スタックでできた \(N\times N\) の配列を、空きスタック 1 本で転置する問題である。</p>
+
+<div class="stmt">
+  <span class="label">定理 1.</span>
+  <p>すべての \(N\ge2\) について \(T(N)\ge(3N^2-N-4)/2\)。</p>
+</div>
+<div class="stmt">
+  <span class="label">結果 2（計算機による）.</span>
+  <p>\(T(6)=55\)。</p>
+</div>
+<div class="stmt">
+  <span class="label">結果 3（計算機による）.</span>
+  <p>\(72\le T(7)\le78\)。また \(8\le N\le24\) について表 1 の上界が成り立つ。</p>
+</div>
+<p>定理 1 は 4 節で証明する。結果 2 は、55 手の具体的な手順と、54 手以内の手順がないことを示す探索（6 節）を合わせたものである。結果 3 の上界は具体的な手順で、短いスクリプトで再生して確かめられる（7 節）。</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th class="num">\(N\)</th><th class="num">下界</th><th class="num">上界</th><th></th><th>下界の根拠</th><th>上界の根拠</th><th class="num">\((2N-1)(N-1)\)</th></tr></thead>
+  <tbody>
+    <!-- bounds:start:ja -->
+    <tr><td class="num">2</td><td class="num">3</td><td class="num">3</td><td><span class="tag exact">確定</span></td><td>全探索</td><td>最短の手順</td><td class="num">3</td></tr>
+    <tr><td class="num">3</td><td class="num">10</td><td class="num">10</td><td><span class="tag exact">確定</span></td><td>全探索</td><td>最短の手順</td><td class="num">10</td></tr>
+    <tr><td class="num">4</td><td class="num">21</td><td class="num">21</td><td><span class="tag exact">確定</span></td><td>全探索</td><td>最短の手順</td><td class="num">21</td></tr>
+    <tr><td class="num">5</td><td class="num">36</td><td class="num">36</td><td><span class="tag exact">確定</span></td><td>全探索</td><td>最短の手順</td><td class="num">36</td></tr>
+    <tr><td class="num">6</td><td class="num">55</td><td class="num">55</td><td><span class="tag exact">確定</span></td><td>下界 J を使った枝刈り全探索</td><td>2 つの規則で制限した探索</td><td class="num">55</td></tr>
+    <tr><td class="num">7</td><td class="num">72</td><td class="num">78</td><td><span class="tag">未確定</span></td><td>下界 J を使った枝刈り全探索</td><td>ビーム探索</td><td class="num">78</td></tr>
+    <tr><td class="num">8</td><td class="num">90</td><td class="num">106</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>以前から記録されていた手順</td><td class="num">105</td></tr>
+    <tr><td class="num">9</td><td class="num">115</td><td class="num">141</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>ビーム探索</td><td class="num">136</td></tr>
+    <tr><td class="num">10</td><td class="num">143</td><td class="num">180</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>ビーム探索</td><td class="num">171</td></tr>
+    <tr><td class="num">11</td><td class="num">174</td><td class="num">229</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>ビーム探索</td><td class="num">210</td></tr>
+    <tr><td class="num">12</td><td class="num">208</td><td class="num">272</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>以前から記録されていた手順</td><td class="num">253</td></tr>
+    <tr><td class="num">13</td><td class="num">245</td><td class="num">380</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">300</td></tr>
+    <tr><td class="num">14</td><td class="num">285</td><td class="num">463</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">351</td></tr>
+    <tr><td class="num">15</td><td class="num">328</td><td class="num">547</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">406</td></tr>
+    <tr><td class="num">16</td><td class="num">374</td><td class="num">656</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">465</td></tr>
+    <tr><td class="num">17</td><td class="num">423</td><td class="num">750</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">528</td></tr>
+    <tr><td class="num">18</td><td class="num">475</td><td class="num">863</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">595</td></tr>
+    <tr><td class="num">19</td><td class="num">530</td><td class="num">1,004</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">666</td></tr>
+    <tr><td class="num">20</td><td class="num">588</td><td class="num">1,157</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">741</td></tr>
+    <tr><td class="num">21</td><td class="num">649</td><td class="num">1,360</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">820</td></tr>
+    <tr><td class="num">22</td><td class="num">713</td><td class="num">1,477</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">903</td></tr>
+    <tr><td class="num">23</td><td class="num">780</td><td class="num">1,692</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">990</td></tr>
+    <tr><td class="num">24</td><td class="num">850</td><td class="num">1,934</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">1,081</td></tr>
+    <!-- bounds:end:ja -->
+  </tbody>
+  <caption>表 1. \(T(N)\) の上界と下界。右端の列は、確定した値を通る 2 次式（9 節）。</caption>
+</table>
+</div>
+<p>定理 1 から \(T(N)\ge1.5N^2-O(N)\) が出る。\(T(N)=O(N^2)\) は知られている [1] ので、\(T(N)=\Theta(N^2)\) である。係数は分かっていない。</p>
+</section>
+
+<section id="related" class="prose">
+<h2>2. 関連研究</h2>
+<p>Szegedy と Yu [1] は、深さ \(d\) のスタック \(n\) 本に積まれた \(nd\) 個の品物を、空のスタック 1 本を使って並べ替える問題を扱っている。同じ種類の品物を区別しない版について、\(n\ge d\) のとき \(7nd(1+\log d)\) 手、\(d\le n^{m/2}\)（\(m\) は定数）のとき \(O(nd)\) 手のアルゴリズムを与えている。後者の定数は小さくない。下界は数え上げによる \(\Omega(nd)\) である。本稿の問題は、\(n=d=N\) で初期配置を 1 つに決めた場合に当たり、同論文の結果から \(T(N)=\Theta(N^2)\) が出る。Han・Stiffler・Bekris・Yu [2] は、それ以前にスタックの並べ替えのアルゴリズムと、小さい場合の最適解の計算を与えている。</p>
+<p>匿名のウェブページ [3] は、本稿と同じ初期配置を「行列の転置」として扱っている。幅優先探索と IDA* により \(T(2),\dots,T(5)=3,10,21,36\) を報告し、これらを通る 2 次式から \(T(N)=(2N-1)(N-1)\) を予想している。一般の \(N\) の下界や、\(N\ge6\) の値は与えていない。</p>
+<p>Ito ほか [4] とそれに続く研究は、玉（または水）を同じ色の上か空の容器にしか置けない版を扱っており、そこでは解けるかどうかの判定が NP 完全である。本稿の規則はこれと異なり、満杯でないレーンへの移動はすべて許され、解けることは常に明らかである。</p>
+</section>
+
+<section id="prelim" class="prose">
+<h2>3. 不動の玉と家</h2>
+<p>配置 \(s\) と、\(s\) から完成形までの手順を 1 つ固定する。以下これを「この手順」と呼ぶ。この節と続く 2 節の主張は、初期配置に限らず、任意の配置 \(s\) についてのものである。</p>
+<p>完成形では、色 \(c\) の玉は 1 本のレーンを埋める。これを \(c\) の<em>家</em>と呼ぶ。色が違えば家も違う。この手順で一度も動かない玉を<em>不動</em>と呼ぶ。動く玉の集合を \(M\)、2 回以上動く玉の集合を \(M_2\) とする。手順の長さは \(|M|+|M_2|\) 以上である。</p>
+<p>空でないレーンについて、底から同じ色が続く部分を<em>底の連続</em>と呼び、その長さを \(r\)、色を \(c_0\) とする。底の連続がレーン全体であるとき<em>単色</em>、底の連続の上に玉があるとき<em>汚れている</em>と言う。</p>
+
+<div class="stmt"><span class="label">補題 1.</span>
+<p>あるレーンの不動の玉は、底から続けて並ぶ。それらは同じ色なので底の連続の一部であり、そのレーンは \(c_0\) の家である。底の色が \(c\) のレーンのうち、不動の玉を持つものは 1 本以下である。</p></div>
+<p><em>証明.</em> 玉は、上にある玉より先には動けない。したがって不動の玉は、そのレーンの動く玉すべてより下にある。不動の玉は、いまの位置のまま完成形に残り、完成形のレーンは 1 色である。最後の主張は、\(c\) の家が 1 本であることによる。∎</p>
+
+<div class="stmt"><span class="label">補題 2.</span>
+<p>ちょうど 1 回だけ動く色 \(c\) の玉は、\(c\) の家へ入る。その時点で、そのレーンでそれより下にある玉はすべて、以後動かない色 \(c\) の玉である。</p></div>
+<p><em>証明.</em> ただ 1 回の移動のあと、その玉は完成形での位置にある。下の玉があとで動くなら、その前にこの玉をどける必要がある。∎</p>
+
+<div class="stmt"><span class="label">補題 3.</span>
+<p>\(L\) を、動く玉を含む \(s\) のレーンとする。\(s\) で \(L\) にある動く玉のうち一番下のものを \(b\)、\(b\) が初めて動く時刻を \(\tau\) とする。\(\tau\) より前に、ちょうど 1 回だけ動く玉が \(L\) に入ることはない。\(\tau\) の直後、\(L\) には不動の玉しかない。不動の玉があれば \(L\) は \(c_0\) の家で、他の色の家ではない。なければ \(L\) は空である。</p></div>
+<p><em>証明.</em> \(\tau\) より前に \(L\) に入った玉は \(b\) より上にあり、\(b\) が動く前に出ていく必要がある。時刻 \(\tau\) には \(b\) より上の玉はすべて出ていて、\(b\) より下には不動の玉しかない。∎</p>
+<p>補題 3 のレーンについて、\(s\) で \(L\) にある動く玉の集合を \(X(L)\) と書く。これは \(b\) とその上の玉すべてである。異なるレーンの \(\tau\) は異なる手の時刻なので、互いに異なる。</p>
+</section>
+
+<section id="hd" class="prose">
+<h2>4. 下界 \(h+D\) と一般の下界</h2>
+<p>次のように置く。
+\[ h(s)=\sum_{\text{レーン}}(\text{高さ}-r)\;+\;\sum_{c}\Bigl(\sum_{L:\,c_0(L)=c}r(L)-\max_{L:\,c_0(L)=c}r(L)\Bigr). \]
+補題 1 より、色 \(c\) の不動の玉の数は、底の色が \(c\) のレーンの \(r\) の最大値以下である。よって \(|M|\ge h(s)\)。</p>
+<p>\(s\) で空か単色であるレーンの数を base とする。汚れたレーンを \(\tau\) の順に \(L_1,L_2,\dots\) と並べる。\(X(L_k)\) の玉が初めて動く時刻は \(\tau_k\) 以下である。補題 2・3 より、それがただ 1 回の移動であるなら、行き先は、\(s\) で空か単色のレーンか、\(L_1,\dots,L_{k-1}\) のどれかである。1 本のレーンが家になれる色は 1 色以下である。したがって、\(X(L_k)\) のうちちょうど 1 回だけ動く玉の色は \(\text{base}+k-1\) 種類以下で、
+\[ |M_2\cap X(L_k)|\;\ge\;|X(L_k)|-\sigma_{\text{base}+k-1}\bigl(X(L_k)\bigr). \qquad (1) \]
+ここで \(\sigma_j(X)\) は、\(X\) の色ごとの個数のうち大きい方から \(j\) 色の合計である。
+\(X(L_k)\) は底の連続より上の玉をすべて含み、不動の玉がないレーンではレーン全体である。ある色の玉を増やしても、(1) の右辺は減らない。そこで (1) は、底の連続を<em>残す</em>レーンでは「底の連続より上の部分」、それ以外では「レーン全体」を \(X\) として評価できる。補題 1 より、残すレーンは底の色ごとに 1 本以下である。</p>
+<p>\(D(s)\) を、汚れたレーンの順番と、残すレーンの許される選び方のすべてについて、(1) の右辺の和を最小にした値と定める。計算は、汚れたレーンの部分集合についての動的計画法による。\(X(L_k)\) は互いに交わらないので \(|M_2|\ge D(s)\) であり、\(s\) からの手順はどれも \(h(s)+D(s)\) 手以上である。</p>
+<p><em>定理 1 の証明.</em> 初期配置では、\(N\) 本のレーン \([1,\dots,N]\) はどれも汚れていて \(r=1\)、\(c_0=1\)、base \(=1\) である。よって \(h=N(N-1)+(N-1)=N^2-1\)。どのレーンも各色の玉を 1 個ずつ含むので、\(k\) 番目のレーンの寄与は、残さないなら \(N-k\)、ただ 1 本の残すレーンで \(k\le N-1\) なら \((N-1)-k\) である。最小値は \(\sum_{k=1}^{N}(N-k)-1=N(N-1)/2-1\) で、\(h+D=(3N^2-N-4)/2\)。∎</p>
+</section>
+
+<section id="j" class="prose">
+<h2>5. 下界 \(D'\) と \(J\)</h2>
+<p>\(D\) では、レーンごとに都合のよい色を選べる。実際の手順では、家は 1 つに決まっている。\(D'(s)\) は、同じ順番についての最小値だが、<em>開いた</em>色の集合 \(O\) を持ち運ぶ。残すレーンが開くのは底の色 \(c_0\) だけで、残せるのは \(c_0\notin O\) のときに限る。全部を出すレーンは、好きな色を 1 つ開く。最初の \(O\) は、\(\min(\text{base},N)\) 色の任意の集合とする。レーンの費用は、\(X\) の玉のうち色が \(O\) にないものの数である。\(D'(s)\le|M_2|\) の証明は手順をたどる。家が、\(s\) で空か単色のレーンか \(L_1,\dots,L_{k-1}\) のどれかである色の集合を \(R_k\) とすると、補題 2・3 より \(|M_2|\ge\sum_k|\{x\in X(L_k):x\text{ の色}\notin R_k\}|\) で、残りのレーン数についての帰納法により、\(R_k\) を含む任意の \(O\) から始めた動的計画法の値はこれ以下になる。\(D'\ge D\) である。</p>
+<p>まだ 2 つの緩みが残る。\(h\) と \(D'\) は別々に最小化されていて、残すレーンの選び方が食い違ってよい。また、単色のレーンは、すでに完成したものも含めて、自由に使える家として数えられている。\(J\) はこの両方を除く。</p>
+<div class="stmt"><span class="label">定義.</span>
+<p>\(J(s)\) を、次の手続きの費用の最小値とする。まず、単色のレーンのうち残すものを選ぶ（同じ色は 1 本まで）。その色は開いている。空のレーン \(e\) 本について、さらに \(e\) 色以下を開いた色として選ぶ。次に、汚れたレーンと、残さなかった単色のレーンを、任意の順番で 1 本ずつ片付ける。\(c_0\) が開いていない汚れたレーンは<em>残す</em>ことができる。費用は \((\text{高さ}-r)\) と、底の連続より上の玉のうち色が開いていないものの数の和で、\(c_0\) が開く。どのレーンも<em>全部出す</em>ことができる。費用は、高さと、そのレーンの玉のうち色が開いていないものの数の和で、そのあと開いていない色を 1 つ開くか、何も開かない。</p></div>
+<div class="stmt"><span class="label">命題 4.</span>
+<p>\(s\) からの手順はどれも \(J(s)\) 手以上で、\(J\ge h+D'\ge h+D\) である。</p></div>
+<p><em>証明.</em> 手順を 1 つ取る。不動の玉を持つ単色のレーンを、残す単色レーンとする。その色と、家が \(s\) の空のレーンである色を合わせたものが、最初の開いた色の集合である。残りの空でないレーンを \(\tau\) の順に並べる（補題 3 はこれらにも成り立つ）。家が、\(s\) の空のレーンか、残す単色レーンか、\(L_1,\dots,L_{k-1}\) のどれかである色の集合を \(R_k\) とする。補題 2・3 より、手順の長さは \[ \sum_k\bigl(|X(L_k)|+|\{x\in X(L_k):x\text{ の色}\notin R_k\}|\bigr) \] 以上である。これは、手続きのある 1 通りの進め方の費用以上である。\(L_k\) に不動の玉があれば、\(L_k\) は \(c_0\) の家なので \(c_0\notin R_k\) で、手続きは残すことができる。\(X(L_k)\) は底の連続より上をすべて含むので、費用は手順のもの以下で、\(R_{k+1}=R_k\cup\{c_0\}\) となる。\(L_k\) に不動の玉がなければ、費用は一致し、手続きは \(L_k\) を家とする色があればそれを開く。∎</p>
+<p>初期配置では \(J=h+D\) なので、\(J\) は定理 1 を改善しない。差が出るのは手順の途中である。4 色の全 37,449,732 状態で、\(J\) は正確な距離を一度も超えず、13,639,911 状態で距離と一致し、差の平均は 0.92 手である（\(h+D'\) では 1.58 手）。</p>
+</section>
+
+<section id="search" class="prose">
+<h2>6. 証明のための探索</h2>
+<p>\(T(N)\ge B\) を示すには、初期配置から幅優先探索を \(g=0,1,\dots,B-1\) の層ごとに進め、層 \(g\) で到達した状態 \(t\) を、\(g+J(t)\le B-1\) のときだけ残す。状態は、レーンの入れ替えを同一視して扱う。完成形が現れなければ、\(B-1\) 手以内の手順はない。</p>
+<p><em>見落としがないこと.</em> \(s_0,\dots,s_T\) を \(T\le B-1\) の手順とする。\(J(s_i)\le T-i\) なので \(i+J(s_i)\le B-1\) で、帰納法により \(s_i\) は \(i\) 以下のどこかの層で残る。</p>
+<p><em>重複の除去は 2 層で足りること.</em> 層 \(g\) の状態 \(u\) の隣 \(t\) が、すでに層 \(g'\le g-2\) で残っていたとする。手は逆向きにも打てるので \(u\) は \(t\) の隣で、\((g'+1)+J(u)\le g+J(u)\le B-1\) だから、\(u\) は層 \(g'+1&lt;g\) で残っていたはずである。したがって、覚えておくのは層 \(g\) と \(g-1\) だけでよい。これは実際に効く。弱い下界 \(h+D\) では、\(B=52\) の探索が 3 億 2,500 万状態をたどる。</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th class="num">\(B\)</th><th class="num">\(h+D\)</th><th class="num">\(h+D'\)</th><th class="num">\(J\)</th></tr></thead>
+  <tbody>
+    <tr><td class="num">50</td><td class="num">15,357,936</td><td class="num">471,156</td><td class="num">285</td></tr>
+    <tr><td class="num">51</td><td class="num">71,536,797</td><td class="num">2,355,083</td><td class="num">1,828</td></tr>
+    <tr><td class="num">52</td><td class="num">324,609,711</td><td class="num">9,903,624</td><td class="num">17,753</td></tr>
+    <tr><td class="num">53</td><td class="num">—</td><td class="num">41,652,235</td><td class="num">129,406</td></tr>
+    <tr><td class="num">54</td><td class="num">—</td><td class="num">—</td><td class="num">833,372</td></tr>
+    <tr><td class="num">55</td><td class="num">—</td><td class="num">—</td><td class="num">4,710,164</td></tr>
+  </tbody>
+  <caption>表 2. \(T(6)\ge B\) の探索でたどった状態の数（枝刈りに使った下界ごと）。実行した探索は、どれも完成形に届かずに終わった。</caption>
+</table>
+</div>
+<p>\(J\) による \(B=55\) の探索は、デスクトップ計算機 1 台で 2,528 秒かかった。7 節の 55 手の手順と合わせて \(T(6)=55\) を得る。7 色では、同じ探索で \(T(7)\ge71\)（82,727 状態）と \(T(7)\ge72\)（800,114 状態）を得た。\(B\) を 1 上げるごとに、状態数は 7〜10 倍になる。</p>
+</section>
+
+<section id="upper" class="prose">
+<h2>7. 上界</h2>
+<p>表 1 の上界はどれも、リポジトリに保存した手順で、短いスクリプトが再生する（10 節）。\(N\le5\) の手順は最短である。\(N=6\) の 55 手の手順は、2 つの規則（1 本のレーンを最後まで動かさない。玉は、空のレーンか、同じか大きい色の玉の上にだけ置く）で制限した探索で見つけた。この制限の下では探索空間が小さい。\(N=7\) の 78 手の手順はビーム探索で見つけた。</p>
+<p>\(9\le N\le11\) の手順は、1 層あたり最大 \(10^6\) 状態のビーム探索のあと、途中の配置から先を繰り返し解き直して得た。\(N=8\)（106 手）と \(N=12\)（272 手）の手順は、以前から記録されていたもので、本稿では改善できていない。後者はマクロ手についての探索で見つかったもので、前者の出所は記録がない。どちらも再生して正しいことを確かめてある。</p>
+<p>\(13\le N\le24\) では組み立てを使う。\(m=\lfloor N/2\rfloor\) とする。色 \(N,N-1,\dots,\lceil N/2\rceil+1\) を 1 色ずつ完成させる。空のレーンが必要になるたびに、2 本のレーンを \([1,\dots,\lceil N/2\rceil]\) と \([1,\dots,m]\) まで掘り、一方を他方へ注ぐ。これでレーン \([1,\dots,\lceil N/2\rceil,m,\dots,1]\) と空のレーンができる。残るのは、この形のレーン \(m\) 本と空のレーン 1 本である。これらのレーンの上の層は、色の名前を付け替えると \(m\) 色の初期配置になるので、\(m\) 色の既知の手順をその上で再生できる。残りはビーム探索で解く。こうして得た上界は \(N=24\) でおよそ \(3.4N^2\) で、最短からは確実に遠い。</p>
+</section>
+
+<section id="trust" class="prose">
+<h2>8. 結果の前提</h2>
+<p><strong>定理 1</strong> は 4 節で証明してあり、計算には拠らない。</p>
+<p><strong>上界</strong>は、再生スクリプトだけに拠る。スクリプトは、初期配置に手を順に適用し、最後の配置を調べる。</p>
+<p><strong>6 色と 7 色の下界</strong>は、計算機を使った証明である。命題 4、\(J\) の実装の正しさ、探索プログラムの正しさに拠る。\(J\) の実装は、4 色の全状態で正確な距離と照合した。別に Python で書いた第 2 の実装は、4 色と 5 色の 160,834 状態で正確な距離と照合した。探索プログラムは 3 種類の下界で実行し、重なる範囲では同じ結論になった（表 2）。探索プログラムを独立に書き直しての確認はしておらず、4・5 節の証明の形式的な検証もしていない。</p>
+</section>
+
+<section id="open" class="prose">
+<h2>9. 未解決の問題</h2>
+<p><strong>係数.</strong> \(1.5\le\liminf T(N)/N^2\) であり、明示的で小さい上からの定数は知られていない。確定した値は \(2\le N\le6\) で \(T(N)=(2N-1)(N-1)\) を満たす。\(N\ge8\) について私たちが知る最良の手順はこれより長い。106, 141, 180, 229, 272 に対して、式の値は 105, 136, 171, 210, 253 である。これらは上界なので、式を否定するものではない。</p>
+<p><strong>\(J\) が数えていないもの.</strong> 手順の長さは、動く玉の数と、玉を最終位置以外へ置く手の数の和である。\(4\le N\le7\) の最短の手順を調べると、後者はちょうど \((N-1)(N-2)\) で、\(J\) が保証する数のおよそ 2 倍だった。\(J\) は、一度は仮置きされる玉を数えるが、仮置きの場所はいつでもあるとみなしている。あるレーンが空のとき、他のレーンはすべて満杯である。したがって、家にするために空けたばかりのレーンは、次のレーンを空ける前に再び満杯になる。最短の手順では、そのレーンは主に仮置きの玉で埋まり、それがそのレーン自身の色をふさぐ。これを下界にすることが、自然な次の一歩である。</p>
+<p><strong>7 色.</strong> \(72\le T(7)\le78\) の差を探索だけで埋めるには、最後に実行した段階のおよそ \(10^6\) 倍の状態が要る。</p>
+</section>
+
+<section id="data" class="prose">
+<h2>10. コードとデータ</h2>
+<p>リポジトリ <a href="https://github.com/wand125/colorsort-transpose">github.com/wand125/colorsort-transpose</a> に、手順、上界・下界とその根拠、探索プログラム、結果を決めた実行のログ、3〜5 節の証明（日本語）がある。<a href="data.html">データのページ</a>に手順の一覧と確かめ方を、<a href="play.html">再生のページ</a>に手順のアニメーションを置いた。</p>
+<h2>参考文献</h2>
+<ol class="refs">
+  <li>M. Szegedy and J. Yu, Rubik Tables and object rearrangement, <em>Int. J. Robotics Research</em> (2022); arXiv:2002.04979.</li>
+  <li>S. D. Han, N. M. Stiffler, K. E. Bekris and J. Yu, Efficient, high-quality stack rearrangement, <em>IEEE Robotics and Automation Letters</em> 3 (2018), 1608–1615.</li>
+  <li>Anonymous, web page on matrix transposition with piles, https://piles-five.vercel.app/（2026 年 11 月閲覧）.</li>
+  <li>T. Ito et al., Sorting balls and water: equivalence and computational complexity, <em>FUN 2022</em>; arXiv:2202.09495.</li>
+</ol>
+</section>
+
+<p class="footer">wand125 · コードは MIT ライセンス · 2026 年 11 月の草稿。<a href="paper.html" lang="en">English version</a></p>
+</div>
+</body>
+</html>

@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ball-sort transposition: Paper</title>
+<meta name="description" content="Exact optimal move counts for the ball-sort transposition puzzle up to six colours, a general lower bound, and verified upper bounds up to 24 colours.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=Noto+Serif+JP:wght@400;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400;1,8..60,600&display=swap">
+<link rel="stylesheet" href="style.css">
+<script>
+window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\\]"]] }, svg: { fontCache: "global" } };
+</script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.js"></script>
+</head>
+<body>
+<div class="page paper">
+<div class="bar">
+  <a class="site" href="index.html">Ball-sort transposition</a>
+  <nav aria-label="Site">
+    <a href="index.html">Overview</a>
+    <a href="paper.html" aria-current="page">Paper (English)</a>
+    <a href="paper.ja.html" lang="ja">論文（日本語）</a>
+    <a href="data.html">Data</a>
+    <a href="play.html">Replay</a>
+  </nav>
+</div>
+
+<header>
+  <p class="eyebrow">Combinatorial puzzles · Preprint draft</p>
+  <h1>Transposing \(N\) stacks with one spare: the ball-sort puzzle is solved in 55 moves for six colours, and needs at least \((3N^2-N-4)/2\) moves in general</h1>
+  <p class="byline">wand125 · November 2026 · draft for preview</p>
+</header>
+
+<section class="abstract" aria-label="Abstract">
+  <p><strong>Abstract.</strong> Take \(N\) colours, \(N\) balls of each colour, and \(N+1\) stacks of capacity \(N\). At the start one stack is empty and every other stack holds the colours \(1,\dots,N\) from bottom to top. A move takes the top ball of a stack to any stack that is not full. Let \(T(N)\) be the least number of moves after which every stack is empty or holds \(N\) balls of one colour. We prove \(T(N)\ge(3N^2-N-4)/2\) for all \(N\), and we determine \(T(6)=55\) by a computer search; the values \(T(2),\dots,T(5)=3,10,21,36\) were known. For seven colours we obtain \(72\le T(7)\le78\). The search is a breadth-first search pruned by a lower bound \(J\) on the distance to the goal, which we define and prove correct; with \(J\) the proof of \(T(6)\ge55\) visits 4.7 million states. We also give explicit, machine-checked solutions for every \(N\le24\). The exact values agree with \((2N-1)(N-1)\) up to \(N=6\); whether they do for larger \(N\) is open, and the best solutions we know for \(N\ge8\) are longer.</p>
+</section>
+
+<nav class="toc" aria-label="Contents">
+  <ol>
+    <li><a href="#intro">Introduction and results</a></li>
+    <li><a href="#related">Related work</a></li>
+    <li><a href="#prelim">Unmoved balls and homes</a></li>
+    <li><a href="#hd">The bound \(h+D\) and the general lower bound</a></li>
+    <li><a href="#j">The bounds \(D'\) and \(J\)</a></li>
+    <li><a href="#search">The proof search</a></li>
+    <li><a href="#upper">Upper bounds</a></li>
+    <li><a href="#trust">What the results rely on</a></li>
+    <li><a href="#open">Open questions</a></li>
+    <li><a href="#data">Code and data</a></li>
+  </ol>
+</nav>
+
+<section id="intro" class="prose">
+<h2>1. Introduction and results</h2>
+<p>The puzzle is a version of the "ball sort" or "colour sort" games in which a ball may be placed on any ball. There are \(N\) colours, \(N\) balls of each colour and \(N+1\) stacks, which we call <em>lanes</em>, each of capacity \(N\). Lanes are numbered \(0,\dots,N\). In the starting position lane 0 is empty and each of the lanes \(1,\dots,N\) holds the colours \(1,2,\dots,N\) from bottom to top. A <em>move</em> takes the top ball of a non-empty lane and puts it on top of another lane that holds fewer than \(N\) balls. A position is <em>finished</em> if every lane is empty or holds \(N\) balls of one colour. \(T(N)\) is the least number of moves from the starting position to a finished one.</p>
+<p>In the starting position every row is monochrome, and in a finished position every column is. The task is to transpose an \(N\times N\) array of stacks using one spare stack.</p>
+
+<div class="stmt">
+  <span class="label">Theorem 1.</span>
+  <p>For every \(N\ge2\), \(T(N)\ge(3N^2-N-4)/2\).</p>
+</div>
+<div class="stmt">
+  <span class="label">Result 2 (computer-assisted).</span>
+  <p>\(T(6)=55\).</p>
+</div>
+<div class="stmt">
+  <span class="label">Result 3 (computer-assisted).</span>
+  <p>\(72\le T(7)\le78\), and for \(8\le N\le24\) the upper bounds of Table 1 hold.</p>
+</div>
+<p>Theorem 1 is proved in Section 4. Result 2 combines an explicit 55-move solution with a search showing that no solution has 54 moves or fewer (Section 6). The upper bounds in Result 3 are explicit move sequences that a short script replays (Section 7).</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th class="num">\(N\)</th><th class="num">lower</th><th class="num">upper</th><th></th><th>lower bound from</th><th>upper bound from</th><th class="num">\((2N-1)(N-1)\)</th></tr></thead>
+  <tbody>
+    <!-- bounds:start:en -->
+    <tr><td class="num">2</td><td class="num">3</td><td class="num">3</td><td><span class="tag exact">exact</span></td><td>exhaustive search</td><td>optimal solution</td><td class="num">3</td></tr>
+    <tr><td class="num">3</td><td class="num">10</td><td class="num">10</td><td><span class="tag exact">exact</span></td><td>exhaustive search</td><td>optimal solution</td><td class="num">10</td></tr>
+    <tr><td class="num">4</td><td class="num">21</td><td class="num">21</td><td><span class="tag exact">exact</span></td><td>exhaustive search</td><td>optimal solution</td><td class="num">21</td></tr>
+    <tr><td class="num">5</td><td class="num">36</td><td class="num">36</td><td><span class="tag exact">exact</span></td><td>exhaustive search</td><td>optimal solution</td><td class="num">36</td></tr>
+    <tr><td class="num">6</td><td class="num">55</td><td class="num">55</td><td><span class="tag exact">exact</span></td><td>pruned search with the bound J</td><td>search restricted by two rules</td><td class="num">55</td></tr>
+    <tr><td class="num">7</td><td class="num">72</td><td class="num">78</td><td><span class="tag">open</span></td><td>pruned search with the bound J</td><td>beam search</td><td class="num">78</td></tr>
+    <tr><td class="num">8</td><td class="num">90</td><td class="num">106</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>earlier recorded solution</td><td class="num">105</td></tr>
+    <tr><td class="num">9</td><td class="num">115</td><td class="num">141</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>beam search</td><td class="num">136</td></tr>
+    <tr><td class="num">10</td><td class="num">143</td><td class="num">180</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>beam search</td><td class="num">171</td></tr>
+    <tr><td class="num">11</td><td class="num">174</td><td class="num">229</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>beam search</td><td class="num">210</td></tr>
+    <tr><td class="num">12</td><td class="num">208</td><td class="num">272</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>earlier recorded solution</td><td class="num">253</td></tr>
+    <tr><td class="num">13</td><td class="num">245</td><td class="num">380</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">300</td></tr>
+    <tr><td class="num">14</td><td class="num">285</td><td class="num">463</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">351</td></tr>
+    <tr><td class="num">15</td><td class="num">328</td><td class="num">547</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">406</td></tr>
+    <tr><td class="num">16</td><td class="num">374</td><td class="num">656</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">465</td></tr>
+    <tr><td class="num">17</td><td class="num">423</td><td class="num">750</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">528</td></tr>
+    <tr><td class="num">18</td><td class="num">475</td><td class="num">863</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">595</td></tr>
+    <tr><td class="num">19</td><td class="num">530</td><td class="num">1,004</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">666</td></tr>
+    <tr><td class="num">20</td><td class="num">588</td><td class="num">1,157</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">741</td></tr>
+    <tr><td class="num">21</td><td class="num">649</td><td class="num">1,360</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">820</td></tr>
+    <tr><td class="num">22</td><td class="num">713</td><td class="num">1,477</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">903</td></tr>
+    <tr><td class="num">23</td><td class="num">780</td><td class="num">1,692</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">990</td></tr>
+    <tr><td class="num">24</td><td class="num">850</td><td class="num">1,934</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">1,081</td></tr>
+    <!-- bounds:end:en -->
+  </tbody>
+  <caption>Table 1. Bounds on \(T(N)\). The last column is the quadratic through the exact values; see Section 9.</caption>
+</table>
+</div>
+<p>Theorem 1 gives \(T(N)\ge1.5N^2-O(N)\). It is known that \(T(N)=O(N^2)\) [1], so \(T(N)=\Theta(N^2)\); the constant is not known.</p>
+</section>
+
+<section id="related" class="prose">
+<h2>2. Related work</h2>
+<p>Szegedy and Yu [1] study the rearrangement of \(nd\) items stored in \(n\) stacks of depth \(d\) with one empty buffer stack. For the version in which items of the same type are interchangeable they give an algorithm with \(7nd(1+\log d)\) moves when \(n\ge d\), and \(O(nd)\) moves when \(d\le n^{m/2}\) for a constant \(m\), with a constant that is not small. Their lower bound is \(\Omega(nd)\), by counting. Our problem is the case \(n=d=N\) with one particular starting arrangement; their result gives \(T(N)=\Theta(N^2)\). Han, Stiffler, Bekris and Yu [2] gave earlier algorithms and optimal solvers for small instances of stack rearrangement.</p>
+<p>An anonymous web page [3] treats exactly our starting position, under the name of matrix transposition. It reports \(T(2),\dots,T(5)=3,10,21,36\) from breadth-first search and IDA*, and conjectures \(T(N)=(2N-1)(N-1)\) from the quadratic through those values. It gives no lower bound for general \(N\) and no value for \(N\ge6\).</p>
+<p>Ito et al. [4] and later work study the games in which a ball (or a unit of water) may only be placed on the same colour or in an empty tube; deciding solvability is NP-complete there. Those rules are different from ours, where every move onto a non-full lane is allowed and solvability is never in question.</p>
+</section>
+
+<section id="prelim" class="prose">
+<h2>3. Unmoved balls and homes</h2>
+<p>Fix a position \(s\) and a sequence of moves from \(s\) to a finished position; we call it <em>the solution</em>. All statements in this section and the next two are about an arbitrary position \(s\), not only the starting one.</p>
+<p>In the finished position each colour \(c\) fills one lane, the <em>home</em> of \(c\). Different colours have different homes. A ball is <em>unmoved</em> if the solution never moves it. Let \(M\) be the set of balls that move and \(M_2\) the set of balls that move at least twice. The length of the solution is at least \(|M|+|M_2|\).</p>
+<p>For a non-empty lane, its <em>bottom run</em> is the maximal block of equal colours starting at the bottom; \(r\) is its length and \(c_0\) its colour. A lane is <em>uniform</em> if the bottom run is the whole lane, and <em>dirty</em> if there are balls above the bottom run.</p>
+
+<div class="stmt"><span class="label">Lemma 1.</span>
+<p>The unmoved balls of a lane form a block at its bottom. They have one colour, so they are part of the bottom run, and the lane is the home of \(c_0\). Among the lanes with bottom colour \(c\), at most one contains an unmoved ball.</p></div>
+<p><em>Proof.</em> A ball cannot move before the balls above it, so unmoved balls lie below all moved balls of the lane. Unmoved balls are in the finished position where they are now, and a finished lane has one colour. The last claim holds because \(c\) has one home. ∎</p>
+
+<div class="stmt"><span class="label">Lemma 2.</span>
+<p>A ball of colour \(c\) that moves exactly once moves into the home of \(c\), and at that moment every ball below it in that lane is a ball of colour \(c\) that never moves again.</p></div>
+<p><em>Proof.</em> After its only move the ball is where it is in the finished position. If a ball below it moved later, it would have to be lifted first. ∎</p>
+
+<div class="stmt"><span class="label">Lemma 3.</span>
+<p>Let \(L\) be a lane of \(s\) that contains a ball which moves. Let \(b\) be the lowest such ball among those present in \(s\), and \(\tau\) the time of the first move of \(b\). Before \(\tau\), no ball that moves exactly once enters \(L\). Immediately after \(\tau\), \(L\) contains only its unmoved balls: if there are any, \(L\) is the home of \(c_0\) and of no other colour; if there are none, \(L\) is empty.</p></div>
+<p><em>Proof.</em> A ball entering \(L\) before \(\tau\) lies above \(b\) and must leave again before \(b\) moves. At time \(\tau\) everything above \(b\) has left, and below \(b\) there are only unmoved balls. ∎</p>
+<p>For a lane as in Lemma 3 we write \(X(L)\) for the balls of \(L\) in \(s\) that move; these are \(b\) and everything above it. The times \(\tau\) of different lanes are times of different moves, so they are distinct.</p>
+</section>
+
+<section id="hd" class="prose">
+<h2>4. The bound \(h+D\) and the general lower bound</h2>
+<p>Define
+\[ h(s)=\sum_{\text{lanes}}(\text{height}-r)\;+\;\sum_{c}\Bigl(\sum_{L:\,c_0(L)=c}r(L)-\max_{L:\,c_0(L)=c}r(L)\Bigr). \]
+By Lemma 1 the number of unmoved balls of colour \(c\) is at most the largest \(r\) among the lanes with bottom colour \(c\), so \(|M|\ge h(s)\).</p>
+<p>Let <em>base</em> be the number of lanes of \(s\) that are empty or uniform. Order the dirty lanes by their times \(\tau\) as \(L_1,L_2,\dots\). When a ball of \(X(L_k)\) makes its first move, the time is at most \(\tau_k\); by Lemmas 2 and 3, if this is its only move, it enters a lane that is empty or uniform in \(s\), or one of \(L_1,\dots,L_{k-1}\). Each lane is the home of at most one colour. Hence the balls of \(X(L_k)\) that move exactly once have at most \(\text{base}+k-1\) different colours, and
+\[ |M_2\cap X(L_k)|\;\ge\;|X(L_k)|-\sigma_{\text{base}+k-1}\bigl(X(L_k)\bigr), \qquad (1) \]
+where \(\sigma_j(X)\) is the largest total size of \(j\) colour classes of \(X\).
+\(X(L_k)\) contains all balls above the bottom run, and it is the whole lane if the lane has no unmoved ball. Adding balls of one colour to a multiset does not decrease the right-hand side of (1). So (1) can be evaluated with \(X\) equal to the part above the bottom run for a lane that <em>keeps</em> its bottom run, and with \(X\) equal to the whole lane otherwise; by Lemma 1 at most one lane per bottom colour keeps.</p>
+<p>\(D(s)\) is the minimum of the sum of the right-hand sides of (1) over all orders of the dirty lanes and all admissible choices of the keeping lanes. It is computed by dynamic programming over subsets of the dirty lanes. Since the sets \(X(L_k)\) are disjoint, \(|M_2|\ge D(s)\), and every solution from \(s\) has at least \(h(s)+D(s)\) moves.</p>
+<p><em>Proof of Theorem 1.</em> In the starting position all \(N\) lanes \([1,\dots,N]\) are dirty with \(r=1\) and \(c_0=1\), and base \(=1\). So \(h=N(N-1)+(N-1)=N^2-1\). Every lane contains one ball of each colour, so the lane in position \(k\) contributes \(N-k\) if it does not keep, and \((N-1)-k\) if it is the one keeping lane and \(k\le N-1\). The minimum is \(\sum_{k=1}^{N}(N-k)-1=N(N-1)/2-1\), and \(h+D=(3N^2-N-4)/2\). ∎</p>
+</section>
+
+<section id="j" class="prose">
+<h2>5. The bounds \(D'\) and \(J\)</h2>
+<p>\(D\) lets each lane choose the colours that suit it. In a solution the homes are fixed once. \(D'(s)\) is the minimum, over the same orders, of the cost in which a set \(O\) of <em>open</em> colours is carried along: a lane that keeps opens only its bottom colour \(c_0\) and may keep only if \(c_0\notin O\); a lane that is cleared completely opens one colour of its choice; initially \(O\) is any set of \(\min(\text{base},N)\) colours; the cost of a lane is the number of balls of \(X\) whose colour is not in \(O\). The proof that \(D'(s)\le|M_2|\) follows the solution: with \(R_k\) the set of colours whose home is an empty or uniform lane of \(s\) or one of \(L_1,\dots,L_{k-1}\), Lemmas 2 and 3 give \(|M_2|\ge\sum_k|\{x\in X(L_k):\text{colour}(x)\notin R_k\}|\), and one shows by induction on the number of remaining lanes that the dynamic programme started from any \(O\supseteq R_k\) costs no more. We have \(D'\ge D\).</p>
+<p>Two losses remain. \(h\) and \(D'\) are minimised separately, each with its own choice of keeping lanes; and uniform lanes, including lanes that are already finished, are counted as free homes. The bound \(J\) removes both.</p>
+<div class="stmt"><span class="label">Definition.</span>
+<p>\(J(s)\) is the minimum cost of the following process. First choose which uniform lanes keep (at most one per colour); their colours are open. For the \(e\) empty lanes choose at most \(e\) further colours to be open. Then clear the dirty lanes and the uniform lanes that do not keep, one at a time, in any order. A dirty lane with \(c_0\) not open may <em>keep</em>: this costs \((\text{height}-r)\) plus the number of balls above the bottom run whose colour is not open, and opens \(c_0\). Any lane may be <em>cleared completely</em>: this costs its height plus the number of its balls whose colour is not open, and then opens one colour that is not open, or none.</p></div>
+<div class="stmt"><span class="label">Proposition 4.</span>
+<p>Every solution from \(s\) has at least \(J(s)\) moves, and \(J\ge h+D'\ge h+D\).</p></div>
+<p><em>Proof.</em> Take a solution. Uniform lanes with an unmoved ball are the keeping uniform lanes; their colours, and the colours whose home is an empty lane of \(s\), form the initial open set. The other non-empty lanes are ordered by \(\tau\) (Lemma 3 applies to them). Let \(R_k\) be the colours whose home is an empty lane of \(s\), a keeping uniform lane, or one of \(L_1,\dots,L_{k-1}\). By Lemmas 2 and 3 the solution has at least \[ \sum_k\bigl(|X(L_k)|+|\{x\in X(L_k):\text{colour}(x)\notin R_k\}|\bigr) \] moves. This is at least the cost of one run of the process: if \(L_k\) has an unmoved ball it is the home of \(c_0\), so \(c_0\notin R_k\), the process may keep, its cost is at most the solution's because \(X(L_k)\) contains everything above the bottom run, and \(R_{k+1}=R_k\cup\{c_0\}\); if \(L_k\) has no unmoved ball the costs agree, and the process opens the colour whose home is \(L_k\), if there is one. ∎</p>
+<p>In the starting position \(J=h+D\), so \(J\) does not improve Theorem 1. It is much sharper in the middle of a solution. On all 37,449,732 states with four colours, \(J\) never exceeds the exact distance, it equals the distance on 13,639,911 states, and the mean difference is 0.92 moves (1.58 for \(h+D'\)).</p>
+</section>
+
+<section id="search" class="prose">
+<h2>6. The proof search</h2>
+<p>To show \(T(N)\ge B\) we run a breadth-first search from the starting position, in layers \(g=0,1,\dots,B-1\), keeping a state \(t\) reached in layer \(g\) only if \(g+J(t)\le B-1\). States are taken up to permutation of the lanes. If no finished state appears, there is no solution with at most \(B-1\) moves.</p>
+<p><em>Nothing is lost.</em> Let \(s_0,\dots,s_T\) be a solution with \(T\le B-1\). Then \(J(s_i)\le T-i\), so \(i+J(s_i)\le B-1\), and by induction \(s_i\) is kept in some layer \(\le i\).</p>
+<p><em>Two layers are enough to remove duplicates.</em> Suppose a neighbour \(t\) of a state \(u\) in layer \(g\) had already been kept in a layer \(g'\le g-2\). Moves are reversible, so \(u\) is a neighbour of \(t\), and \((g'+1)+J(u)\le g+J(u)\le B-1\); then \(u\) would have been kept in layer \(g'+1&lt;g\). So only layers \(g\) and \(g-1\) have to be stored. This matters: with the weaker bound \(h+D\) the search for \(B=52\) visits 325 million states.</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th class="num">\(B\)</th><th class="num">\(h+D\)</th><th class="num">\(h+D'\)</th><th class="num">\(J\)</th></tr></thead>
+  <tbody>
+    <tr><td class="num">50</td><td class="num">15,357,936</td><td class="num">471,156</td><td class="num">285</td></tr>
+    <tr><td class="num">51</td><td class="num">71,536,797</td><td class="num">2,355,083</td><td class="num">1,828</td></tr>
+    <tr><td class="num">52</td><td class="num">324,609,711</td><td class="num">9,903,624</td><td class="num">17,753</td></tr>
+    <tr><td class="num">53</td><td class="num">—</td><td class="num">41,652,235</td><td class="num">129,406</td></tr>
+    <tr><td class="num">54</td><td class="num">—</td><td class="num">—</td><td class="num">833,372</td></tr>
+    <tr><td class="num">55</td><td class="num">—</td><td class="num">—</td><td class="num">4,710,164</td></tr>
+  </tbody>
+  <caption>Table 2. States visited by the search for \(T(6)\ge B\), by pruning bound. Every search that was run ended without reaching a finished state.</caption>
+</table>
+</div>
+<p>The search for \(B=55\) with \(J\) took 2,528 seconds on one desktop machine. With the 55-move solution of Section 7 this gives \(T(6)=55\). For seven colours the same search gives \(T(7)\ge71\) with 82,727 states and \(T(7)\ge72\) with 800,114 states. Each further value of \(B\) multiplies the number of states by seven to ten.</p>
+</section>
+
+<section id="upper" class="prose">
+<h2>7. Upper bounds</h2>
+<p>Each upper bound in Table 1 is a move sequence stored in the repository and replayed by a short script (Section 10). For \(N\le5\) the sequences are optimal. The 55-move solution for \(N=6\) was found by a search restricted by two extra rules (one lane is left untouched until the end, and a ball is only placed on an empty lane or on a ball of the same or a larger colour), under which the search space is small. The 78-move solution for \(N=7\) was found by beam search.</p>
+<p>For \(9\le N\le11\) the sequences come from beam search with up to \(10^6\) states per layer, followed by repeated re-solving of the tail of the sequence from intermediate positions. The sequences for \(N=8\) (106 moves) and \(N=12\) (272 moves) are earlier recorded solutions that we have not improved; the latter was found by a search over macro-moves, and we have no record of the origin of the former. Both replay correctly.</p>
+<p>For \(13\le N\le24\) we use a construction. Let \(m=\lfloor N/2\rfloor\). Colours \(N,N-1,\dots,\lceil N/2\rceil+1\) are completed one at a time; whenever an empty lane is needed, two lanes are dug down to \([1,\dots,\lceil N/2\rceil]\) and \([1,\dots,m]\) and one is poured onto the other, which gives a lane \([1,\dots,\lceil N/2\rceil,m,\dots,1]\) and an empty lane. What remains is \(m\) such lanes and an empty one. The top layers of these lanes form, after renaming colours, the starting position for \(m\) colours, so a known solution for \(m\) colours can be replayed on them; the rest is solved by beam search. The resulting bounds are roughly \(3.4N^2\) at \(N=24\) and are certainly far from optimal.</p>
+</section>
+
+<section id="trust" class="prose">
+<h2>8. What the results rely on</h2>
+<p><strong>Theorem 1</strong> is proved in Section 4 and does not depend on any computation.</p>
+<p><strong>The upper bounds</strong> depend only on the replay script, which applies the moves to the starting position and tests the final position.</p>
+<p><strong>The lower bounds for six and seven colours</strong> are computer-assisted. They rely on Proposition 4, on the correctness of our implementation of \(J\), and on the correctness of the search program. The implementation of \(J\) was compared with exact distances on all states for four colours, and a second implementation, written separately in Python, was compared with exact distances on 160,834 states for four and five colours. The search program was run with three different pruning bounds and gave the same conclusions where the runs overlap (Table 2). The search program has not been reimplemented independently, and the proofs in Sections 4 and 5 have not been formally verified.</p>
+</section>
+
+<section id="open" class="prose">
+<h2>9. Open questions</h2>
+<p><strong>The constant.</strong> \(1.5\le\liminf T(N)/N^2\), and no explicit small upper constant is known. The exact values satisfy \(T(N)=(2N-1)(N-1)\) for \(2\le N\le6\). For \(N\ge8\) the best solutions we know are longer than this: 106, 141, 180, 229, 272 against 105, 136, 171, 210, 253. These are upper bounds, so they do not refute the formula.</p>
+<p><strong>What \(J\) misses.</strong> A solution's length is the number of moved balls plus the number of moves that do not take a ball to its final place. In the optimal solutions we examined for \(4\le N\le7\) the second number is \((N-1)(N-2)\) exactly, about twice what \(J\) certifies. \(J\) counts balls that are parked at least once but assumes that parking space is always available. When a lane is empty all other lanes are full, so a lane that has just been emptied to become a home must be full again before the next lane can be emptied; in the optimal solutions it is filled mostly with parked balls, which then block its own colour. Turning this into a bound is the natural next step.</p>
+<p><strong>Seven colours.</strong> Closing the gap \(72\le T(7)\le78\) by search alone would need about \(10^6\) times more states than the last step we ran.</p>
+</section>
+
+<section id="data" class="prose">
+<h2>10. Code and data</h2>
+<p>The repository <a href="https://github.com/wand125/colorsort-transpose">github.com/wand125/colorsort-transpose</a> contains the move sequences, the bounds with their sources, the search programs, the logs of the deciding runs, and the proofs of Sections 3 to 5 in Japanese. The <a href="data.html">data page</a> lists the sequences and shows how to check them, and the <a href="play.html">replay page</a> animates them.</p>
+<h2>References</h2>
+<ol class="refs">
+  <li>M. Szegedy and J. Yu, Rubik Tables and object rearrangement, <em>Int. J. Robotics Research</em> (2022); arXiv:2002.04979.</li>
+  <li>S. D. Han, N. M. Stiffler, K. E. Bekris and J. Yu, Efficient, high-quality stack rearrangement, <em>IEEE Robotics and Automation Letters</em> 3 (2018), 1608–1615.</li>
+  <li>Anonymous, web page on matrix transposition with piles, https://piles-five.vercel.app/ (viewed November 2026).</li>
+  <li>T. Ito et al., Sorting balls and water: equivalence and computational complexity, <em>FUN 2022</em>; arXiv:2202.09495.</li>
+</ol>
+</section>
+
+<p class="footer">wand125 · MIT License for code · Draft of November 2026. <a href="paper.ja.html" lang="ja">日本語版</a></p>
+</div>
+</body>
+</html>

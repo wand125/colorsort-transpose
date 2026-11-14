@@ -2,6 +2,8 @@
 
 English: [README.md](README.md)
 
+サイト: <https://wand125.github.io/colorsort-transpose/>（概要、[論文](https://wand125.github.io/colorsort-transpose/paper.ja.html)、[データ](https://wand125.github.io/colorsort-transpose/data.html)、[手順の再生](https://wand125.github.io/colorsort-transpose/play.html)）。サイトの表とデータは `python3 tools/build_site.py` で `bounds.tsv` と `solutions/` から作り直す。
+
 N 色 × N 個の玉を N+1 本のレーンで色ごとにそろえるパズルの、最短手数 T(N) についての計算結果・証明・コードをまとめたもの。
 下界の証明は [LOWER_BOUND_PROOF.md](LOWER_BOUND_PROOF.md)。
 

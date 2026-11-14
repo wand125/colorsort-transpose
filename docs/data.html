@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ball-sort transposition: Data</title>
+<meta name="description" content="Bounds, move sequences, proof logs and verification instructions for the ball-sort transposition puzzle, 2 to 24 colours.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=Noto+Serif+JP:wght@400;600&family=Source+Serif+4:ital,opsz,wght@0,8..60,400;0,8..60,600;1,8..60,400;1,8..60,600&display=swap">
+<link rel="stylesheet" href="style.css">
+<style>
+  [data-show="ja"] [lang="en"].l, [data-show="en"] [lang="ja"].l { display: none; }
+  .switch { display: inline-flex; gap: 2px; }
+  .switch button { font: 15px var(--font-body); background: transparent; color: var(--muted); border: 0; padding: 0 4px; cursor: pointer; }
+  .switch button[aria-pressed="true"] { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+</style>
+</head>
+<body>
+<div class="page" id="root" data-show="en">
+<div class="bar">
+  <a class="site" href="index.html">Ball-sort transposition</a>
+  <nav aria-label="Site">
+    <a href="index.html"><span class="l" lang="en">Overview</span><span class="l" lang="ja">概要</span></a>
+    <a href="paper.html">Paper (English)</a>
+    <a href="paper.ja.html" lang="ja">論文（日本語）</a>
+    <a href="data.html" aria-current="page"><span class="l" lang="en">Data</span><span class="l" lang="ja">データ</span></a>
+    <a href="play.html"><span class="l" lang="en">Replay</span><span class="l" lang="ja">再生</span></a>
+    <span class="switch" role="group" aria-label="Language">
+      <button type="button" id="b-en" aria-pressed="true">EN</button>
+      <button type="button" id="b-ja" aria-pressed="false">日本語</button>
+    </span>
+  </nav>
+</div>
+
+<section class="prose">
+  <h1 class="l" lang="en">Data</h1>
+  <h1 class="l" lang="ja">データ</h1>
+  <p class="l" lang="en">Everything on this page is generated from two sources in the <a href="https://github.com/wand125/colorsort-transpose">repository</a>: <code>bounds.tsv</code> and the move sequences in <code>solutions/</code>. Machine-readable copies: <a href="data/bounds.json">bounds.json</a>, <a href="data/solutions.json">solutions.json</a>.</p>
+  <p class="l" lang="ja">このページの内容は、<a href="https://github.com/wand125/colorsort-transpose">リポジトリ</a>の <code>bounds.tsv</code> と <code>solutions/</code> の手順から作っている。機械で読める形: <a href="data/bounds.json">bounds.json</a>、<a href="data/solutions.json">solutions.json</a>。</p>
+</section>
+
+<section>
+  <h2 class="l" lang="en">Bounds and their sources</h2>
+  <h2 class="l" lang="ja">上界・下界と根拠</h2>
+  <div class="table-wrap">
+  <table>
+    <thead class="l" lang="en"><tr><th class="num">N</th><th class="num">lower</th><th class="num">upper</th><th></th><th>lower bound from</th><th>upper bound from</th><th class="num">(2N−1)(N−1)</th></tr></thead>
+    <tbody class="l" lang="en">
+    <!-- bounds:start:en -->
+    <tr><td class="num">2</td><td class="num">3</td><td class="num">3</td><td><span class="tag exact">exact</span></td><td>exhaustive search</td><td>optimal solution</td><td class="num">3</td></tr>
+    <tr><td class="num">3</td><td class="num">10</td><td class="num">10</td><td><span class="tag exact">exact</span></td><td>exhaustive search</td><td>optimal solution</td><td class="num">10</td></tr>
+    <tr><td class="num">4</td><td class="num">21</td><td class="num">21</td><td><span class="tag exact">exact</span></td><td>exhaustive search</td><td>optimal solution</td><td class="num">21</td></tr>
+    <tr><td class="num">5</td><td class="num">36</td><td class="num">36</td><td><span class="tag exact">exact</span></td><td>exhaustive search</td><td>optimal solution</td><td class="num">36</td></tr>
+    <tr><td class="num">6</td><td class="num">55</td><td class="num">55</td><td><span class="tag exact">exact</span></td><td>pruned search with the bound J</td><td>search restricted by two rules</td><td class="num">55</td></tr>
+    <tr><td class="num">7</td><td class="num">72</td><td class="num">78</td><td><span class="tag">open</span></td><td>pruned search with the bound J</td><td>beam search</td><td class="num">78</td></tr>
+    <tr><td class="num">8</td><td class="num">90</td><td class="num">106</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>earlier recorded solution</td><td class="num">105</td></tr>
+    <tr><td class="num">9</td><td class="num">115</td><td class="num">141</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>beam search</td><td class="num">136</td></tr>
+    <tr><td class="num">10</td><td class="num">143</td><td class="num">180</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>beam search</td><td class="num">171</td></tr>
+    <tr><td class="num">11</td><td class="num">174</td><td class="num">229</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>beam search</td><td class="num">210</td></tr>
+    <tr><td class="num">12</td><td class="num">208</td><td class="num">272</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>earlier recorded solution</td><td class="num">253</td></tr>
+    <tr><td class="num">13</td><td class="num">245</td><td class="num">380</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">300</td></tr>
+    <tr><td class="num">14</td><td class="num">285</td><td class="num">463</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">351</td></tr>
+    <tr><td class="num">15</td><td class="num">328</td><td class="num">547</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">406</td></tr>
+    <tr><td class="num">16</td><td class="num">374</td><td class="num">656</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">465</td></tr>
+    <tr><td class="num">17</td><td class="num">423</td><td class="num">750</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">528</td></tr>
+    <tr><td class="num">18</td><td class="num">475</td><td class="num">863</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">595</td></tr>
+    <tr><td class="num">19</td><td class="num">530</td><td class="num">1,004</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">666</td></tr>
+    <tr><td class="num">20</td><td class="num">588</td><td class="num">1,157</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">741</td></tr>
+    <tr><td class="num">21</td><td class="num">649</td><td class="num">1,360</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">820</td></tr>
+    <tr><td class="num">22</td><td class="num">713</td><td class="num">1,477</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">903</td></tr>
+    <tr><td class="num">23</td><td class="num">780</td><td class="num">1,692</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">990</td></tr>
+    <tr><td class="num">24</td><td class="num">850</td><td class="num">1,934</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">1,081</td></tr>
+    <!-- bounds:end:en -->
+    </tbody>
+    <thead class="l" lang="ja"><tr><th class="num">N</th><th class="num">下界</th><th class="num">上界</th><th></th><th>下界の根拠</th><th>上界の根拠</th><th class="num">(2N−1)(N−1)</th></tr></thead>
+    <tbody class="l" lang="ja">
+    <!-- bounds:start:ja -->
+    <tr><td class="num">2</td><td class="num">3</td><td class="num">3</td><td><span class="tag exact">確定</span></td><td>全探索</td><td>最短の手順</td><td class="num">3</td></tr>
+    <tr><td class="num">3</td><td class="num">10</td><td class="num">10</td><td><span class="tag exact">確定</span></td><td>全探索</td><td>最短の手順</td><td class="num">10</td></tr>
+    <tr><td class="num">4</td><td class="num">21</td><td class="num">21</td><td><span class="tag exact">確定</span></td><td>全探索</td><td>最短の手順</td><td class="num">21</td></tr>
+    <tr><td class="num">5</td><td class="num">36</td><td class="num">36</td><td><span class="tag exact">確定</span></td><td>全探索</td><td>最短の手順</td><td class="num">36</td></tr>
+    <tr><td class="num">6</td><td class="num">55</td><td class="num">55</td><td><span class="tag exact">確定</span></td><td>下界 J を使った枝刈り全探索</td><td>2 つの規則で制限した探索</td><td class="num">55</td></tr>
+    <tr><td class="num">7</td><td class="num">72</td><td class="num">78</td><td><span class="tag">未確定</span></td><td>下界 J を使った枝刈り全探索</td><td>ビーム探索</td><td class="num">78</td></tr>
+    <tr><td class="num">8</td><td class="num">90</td><td class="num">106</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>以前から記録されていた手順</td><td class="num">105</td></tr>
+    <tr><td class="num">9</td><td class="num">115</td><td class="num">141</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>ビーム探索</td><td class="num">136</td></tr>
+    <tr><td class="num">10</td><td class="num">143</td><td class="num">180</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>ビーム探索</td><td class="num">171</td></tr>
+    <tr><td class="num">11</td><td class="num">174</td><td class="num">229</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>ビーム探索</td><td class="num">210</td></tr>
+    <tr><td class="num">12</td><td class="num">208</td><td class="num">272</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>以前から記録されていた手順</td><td class="num">253</td></tr>
+    <tr><td class="num">13</td><td class="num">245</td><td class="num">380</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">300</td></tr>
+    <tr><td class="num">14</td><td class="num">285</td><td class="num">463</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">351</td></tr>
+    <tr><td class="num">15</td><td class="num">328</td><td class="num">547</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">406</td></tr>
+    <tr><td class="num">16</td><td class="num">374</td><td class="num">656</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">465</td></tr>
+    <tr><td class="num">17</td><td class="num">423</td><td class="num">750</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">528</td></tr>
+    <tr><td class="num">18</td><td class="num">475</td><td class="num">863</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">595</td></tr>
+    <tr><td class="num">19</td><td class="num">530</td><td class="num">1,004</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">666</td></tr>
+    <tr><td class="num">20</td><td class="num">588</td><td class="num">1,157</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">741</td></tr>
+    <tr><td class="num">21</td><td class="num">649</td><td class="num">1,360</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">820</td></tr>
+    <tr><td class="num">22</td><td class="num">713</td><td class="num">1,477</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">903</td></tr>
+    <tr><td class="num">23</td><td class="num">780</td><td class="num">1,692</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">990</td></tr>
+    <tr><td class="num">24</td><td class="num">850</td><td class="num">1,934</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">1,081</td></tr>
+    <!-- bounds:end:ja -->
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="prose">
+  <h2 class="l" lang="en">Format of a move sequence</h2>
+  <h2 class="l" lang="ja">手順の書式</h2>
+  <p class="l" lang="en">Lanes are numbered 0 to N; lane 0 is the one that starts empty. A move is two characters in base 36 (0–9, then a–z): the lane the ball leaves and the lane it enters. A sequence is the moves written one after another. The four-colour solution <code id="ex4"></code> starts with <code>10</code>: the top ball of lane 1 goes to lane 0.</p>
+  <p class="l" lang="ja">レーンには 0 から N の番号を付ける。レーン 0 が最初に空のレーン。1 手は 36 進（0–9、a–z）の 2 文字で、玉が出るレーンと入るレーンを表す。手順はそれを並べた文字列。4 色の手順 <code id="ex4j"></code> の最初の <code>10</code> は、レーン 1 の一番上の玉をレーン 0 へ移す手。</p>
+  <p class="l" lang="en">The sequences below are in a normal form, so that solutions which differ only by renaming lanes 1 to N, or by swapping moves that use disjoint lanes, are written the same way: the lanes are renamed so that the finished colours appear in increasing order from left to right, and independent moves are put in lexicographic order.</p>
+  <p class="l" lang="ja">下の手順は正規形で書いてある。レーン 1〜N の番号の付け方だけが違う手順や、使うレーンが重ならない手の順番だけが違う手順は、同じ書き方になる。完成時に色が左から番号順に並ぶようにレーンの番号を付け替え、互いに関係のない手は辞書順に並べている。</p>
+</section>
+
+<section>
+  <h2 class="l" lang="en">Best known move sequences</h2>
+  <h2 class="l" lang="ja">最良の手順</h2>
+  <div id="sols"><p class="note">Loading…</p></div>
+</section>
+
+<section class="prose">
+  <h2 class="l" lang="en">Check it yourself</h2>
+  <h2 class="l" lang="ja">自分で確かめる</h2>
+  <p class="l" lang="en">Replaying a sequence needs no special tool. This is the whole check, in Python:</p>
+  <p class="l" lang="ja">手順の再生に特別な道具は要らない。確認は、Python で書くと次のとおり。</p>
+<pre class="code">D = "0123456789abcdefghijklmnopqrstuvwxyz"
+def check(n, s):
+    lanes = [[]] + [list(range(1, n + 1)) for _ in range(n)]
+    for i in range(0, len(s), 2):
+        a, b = D.index(s[i]), D.index(s[i + 1])
+        assert a != b and lanes[a] and len(lanes[b]) &lt; n
+        lanes[b].append(lanes[a].pop())
+    return all(not l or (len(l) == n and len(set(l)) == 1) for l in lanes)</pre>
+  <p class="l" lang="en">In the repository, <code>python3 tools/verify_all.py</code> replays every stored sequence and compares the move counts with <code>bounds.tsv</code>. The lower-bound searches are in <code>lowerbound/</code> (Rust):</p>
+  <p class="l" lang="ja">リポジトリでは、<code>python3 tools/verify_all.py</code> が保存した手順をすべて再生し、手数を <code>bounds.tsv</code> と突き合わせる。下界の探索は <code>lowerbound/</code>（Rust）にある。</p>
+<pre class="code">cd lowerbound &amp;&amp; cargo build --release
+COLORLB_JOINT=1 ./target/release/colorlb check 4      # bound J vs exact distance, all states, N = 4
+COLORLB_JOINT=1 ./target/release/colorlb prove 6 55   # no solution with at most 54 moves</pre>
+</section>
+
+<section class="prose">
+  <h2 class="l" lang="en">Proof logs</h2>
+  <h2 class="l" lang="ja">証明のログ</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th><span class="l" lang="en">Statement</span><span class="l" lang="ja">示したこと</span></th><th class="num"><span class="l" lang="en">States visited</span><span class="l" lang="ja">たどった状態</span></th><th><span class="l" lang="en">Log</span><span class="l" lang="ja">ログ</span></th></tr></thead>
+    <tbody>
+      <tr><td>T(6) ≥ 54</td><td class="num">833,372</td><td><a href="https://github.com/wand125/colorsort-transpose/blob/main/results/logs/prove6J_54_final.log">prove6J_54_final.log</a></td></tr>
+      <tr><td>T(6) ≥ 55</td><td class="num">4,710,164</td><td><a href="https://github.com/wand125/colorsort-transpose/blob/main/results/logs/prove6J_55_final.log">prove6J_55_final.log</a></td></tr>
+      <tr><td>T(7) ≥ 72</td><td class="num">800,114</td><td><a href="https://github.com/wand125/colorsort-transpose/blob/main/results/logs/prove7J_72_final.log">prove7J_72_final.log</a></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p class="l" lang="en">Other files: <a href="https://github.com/wand125/colorsort-transpose/blob/main/bounds.tsv">bounds.tsv</a>, <a href="https://github.com/wand125/colorsort-transpose/tree/main/solutions">solutions/</a>, <a href="https://github.com/wand125/colorsort-transpose/blob/main/LOWER_BOUND_PROOF.md">the proofs in Japanese</a>, and exact distances for all states with four colours and for a band of states with five (<a href="https://github.com/wand125/colorsort-transpose/tree/main/learn">learn/</a>).</p>
+  <p class="l" lang="ja">そのほかのファイル: <a href="https://github.com/wand125/colorsort-transpose/blob/main/bounds.tsv">bounds.tsv</a>、<a href="https://github.com/wand125/colorsort-transpose/tree/main/solutions">solutions/</a>、<a href="https://github.com/wand125/colorsort-transpose/blob/main/LOWER_BOUND_PROOF.md">下界の証明（日本語）</a>、4 色の全状態と 5 色の一部の状態の正確な距離（<a href="https://github.com/wand125/colorsort-transpose/tree/main/learn">learn/</a>）。</p>
+</section>
+
+<p class="footer">wand125 · <span class="l" lang="en">Draft, November 2026. Code under the MIT License.</span><span class="l" lang="ja">2026 年 11 月の草稿。コードは MIT ライセンス。</span></p>
+</div>
+<script>
+fetch("data/solutions.json").then(function (r) { return r.json(); }).then(function (d) {
+  var box = document.getElementById("sols"); box.textContent = "";
+  Object.keys(d).map(Number).sort(function (a, b) { return a - b; }).forEach(function (n) {
+    var v = d[n], det = document.createElement("details"), sum = document.createElement("summary"), pre = document.createElement("pre"), p = document.createElement("p");
+    det.className = "sol";
+    sum.textContent = "N = " + n + " · " + v.moves.toLocaleString("en-US") + " moves" + (v.exact ? " · optimal" : " · lower bound " + v.lower.toLocaleString("en-US"));
+    pre.textContent = v.s;
+    p.className = "note";
+    var a = document.createElement("a"); a.href = "play.html?n=" + n; a.textContent = "Replay";
+    p.append(a, document.createTextNode(" · " + v.kind_en + (v.file ? " · " + v.file : "")));
+    det.append(sum, pre, p); box.append(det);
+  });
+  if (d[4]) { document.getElementById("ex4").textContent = d[4].s; document.getElementById("ex4j").textContent = d[4].s; }
+}).catch(function (e) { document.getElementById("sols").textContent = "Could not load data/solutions.json"; });
+</script>
+<script>
+(function () {
+  var root = document.getElementById("root"), be = document.getElementById("b-en"), bj = document.getElementById("b-ja");
+  function set(l) {
+    root.setAttribute("data-show", l); document.documentElement.lang = l;
+    be.setAttribute("aria-pressed", l === "en"); bj.setAttribute("aria-pressed", l === "ja");
+    try { localStorage.setItem("bst-lang", l); } catch (e) {}
+  }
+  be.addEventListener("click", function () { set("en"); });
+  bj.addEventListener("click", function () { set("ja"); });
+  var saved = null; try { saved = localStorage.getItem("bst-lang"); } catch (e) {}
+  if (saved === "ja" || saved === "en") set(saved);
+  else if ((navigator.language || "").indexOf("ja") === 0) set("ja");
+})();
+</script>
+</body>
+</html>
