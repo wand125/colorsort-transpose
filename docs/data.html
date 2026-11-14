@@ -55,7 +55,7 @@
     <tr><td class="num">6</td><td class="num">55</td><td class="num">55</td><td><span class="tag exact">exact</span></td><td>pruned search with the bound J</td><td>search restricted by two rules</td><td class="num">55</td></tr>
     <tr><td class="num">7</td><td class="num">73</td><td class="num">78</td><td><span class="tag">open</span></td><td>pruned search with the bound J</td><td>beam search</td><td class="num">78</td></tr>
     <tr><td class="num">8</td><td class="num">92</td><td class="num">106</td><td><span class="tag">open</span></td><td>pruned search with the bound J</td><td>earlier recorded solution</td><td class="num">105</td></tr>
-    <tr><td class="num">9</td><td class="num">115</td><td class="num">141</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>beam search</td><td class="num">136</td></tr>
+    <tr><td class="num">9</td><td class="num">116</td><td class="num">141</td><td><span class="tag">open</span></td><td>pruned search with the bound J</td><td>beam search</td><td class="num">136</td></tr>
     <tr><td class="num">10</td><td class="num">143</td><td class="num">180</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>beam search</td><td class="num">171</td></tr>
     <tr><td class="num">11</td><td class="num">174</td><td class="num">229</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>beam search</td><td class="num">210</td></tr>
     <tr><td class="num">12</td><td class="num">208</td><td class="num">272</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>earlier recorded solution</td><td class="num">253</td></tr>
@@ -70,7 +70,7 @@
     <tr><td class="num">21</td><td class="num">649</td><td class="num">1,360</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">820</td></tr>
     <tr><td class="num">22</td><td class="num">713</td><td class="num">1,477</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">903</td></tr>
     <tr><td class="num">23</td><td class="num">780</td><td class="num">1,692</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">990</td></tr>
-    <tr><td class="num">24</td><td class="num">850</td><td class="num">1,934</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">1,081</td></tr>
+    <tr><td class="num">24</td><td class="num">850</td><td class="num">1,873</td><td><span class="tag">open</span></td><td>general bound (3N²−N−4)/2</td><td>construction and beam search</td><td class="num">1,081</td></tr>
     <!-- bounds:end:en -->
     </tbody>
     <thead class="l" lang="ja"><tr><th class="num">N</th><th class="num">下界</th><th class="num">上界</th><th></th><th>下界の根拠</th><th>上界の根拠</th><th class="num">(2N−1)(N−1)</th></tr></thead>
@@ -83,7 +83,7 @@
     <tr><td class="num">6</td><td class="num">55</td><td class="num">55</td><td><span class="tag exact">確定</span></td><td>下界 J を使った枝刈り全探索</td><td>2 つの規則で制限した探索</td><td class="num">55</td></tr>
     <tr><td class="num">7</td><td class="num">73</td><td class="num">78</td><td><span class="tag">未確定</span></td><td>下界 J を使った枝刈り全探索</td><td>ビーム探索</td><td class="num">78</td></tr>
     <tr><td class="num">8</td><td class="num">92</td><td class="num">106</td><td><span class="tag">未確定</span></td><td>下界 J を使った枝刈り全探索</td><td>以前から記録されていた手順</td><td class="num">105</td></tr>
-    <tr><td class="num">9</td><td class="num">115</td><td class="num">141</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>ビーム探索</td><td class="num">136</td></tr>
+    <tr><td class="num">9</td><td class="num">116</td><td class="num">141</td><td><span class="tag">未確定</span></td><td>下界 J を使った枝刈り全探索</td><td>ビーム探索</td><td class="num">136</td></tr>
     <tr><td class="num">10</td><td class="num">143</td><td class="num">180</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>ビーム探索</td><td class="num">171</td></tr>
     <tr><td class="num">11</td><td class="num">174</td><td class="num">229</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>ビーム探索</td><td class="num">210</td></tr>
     <tr><td class="num">12</td><td class="num">208</td><td class="num">272</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>以前から記録されていた手順</td><td class="num">253</td></tr>
@@ -98,7 +98,7 @@
     <tr><td class="num">21</td><td class="num">649</td><td class="num">1,360</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">820</td></tr>
     <tr><td class="num">22</td><td class="num">713</td><td class="num">1,477</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">903</td></tr>
     <tr><td class="num">23</td><td class="num">780</td><td class="num">1,692</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">990</td></tr>
-    <tr><td class="num">24</td><td class="num">850</td><td class="num">1,934</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">1,081</td></tr>
+    <tr><td class="num">24</td><td class="num">850</td><td class="num">1,873</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">1,081</td></tr>
     <!-- bounds:end:ja -->
     </tbody>
   </table>
@@ -153,6 +153,7 @@ COLORLB_JOINT=1 ./target/release/colorlb prove 6 55   # no solution with at most
       <tr><td>T(7) ≥ 73</td><td class="num">6,755,298</td><td><a href="https://github.com/wand125/colorsort-transpose/blob/main/results/logs/prove7J_73_final.log">prove7J_73_final.log</a></td></tr>
       <tr><td>T(8) ≥ 91</td><td class="num">3,925</td><td><a href="https://github.com/wand125/colorsort-transpose/blob/main/results/logs/prove8J_91.log">prove8J_91.log</a></td></tr>
       <tr><td>T(8) ≥ 92</td><td class="num">33,108</td><td><a href="https://github.com/wand125/colorsort-transpose/blob/main/results/logs/prove8J_92.log">prove8J_92.log</a></td></tr>
+      <tr><td>T(9) ≥ 116</td><td class="num">18,272</td><td><a href="https://github.com/wand125/colorsort-transpose/blob/main/results/logs/prove9J_116.log">prove9J_116.log</a></td></tr>
     </tbody>
   </table>
   </div>

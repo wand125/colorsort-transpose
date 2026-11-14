@@ -214,6 +214,9 @@ fn jlb(s: &State, n: usize) -> u32 {
         let c0 = ball(l, 0);
         let mut r = 1;
         while r < ht && ball(l, r) == c0 { r += 1; }
+        // 完成したレーン（色 c0 が N 個）は残すのが常に最善: 費用 0 で、ほかのレーンに c0 は無いので何も妨げない。
+        // 片付けるなら N 手以上かかる。値を変えずに外せる（2^単色レーン数 の繰り返しが減る）。
+        if r == ht && ht == n { continue; }
         if r == ht { uni.push((c0, ht as u8)); continue; }
         let mut keep = [0u8; 16];
         for k in r..ht { keep[ball(l, k) as usize] += 1; }
@@ -231,7 +234,8 @@ fn jlb(s: &State, n: usize) -> u32 {
     // pm[i]: レーン i の全部の表に出てくる色。残りのレーンに出てこない色を家に足しても、費用も「残せるか」も変わらない
     // （底の色 c0 のレーンが残っていれば c0 は表に出る）ので、足す色の候補から外す（最小値は変わらない）。
     // 同じ形のレーンは入れ替えても値が同じなので、形ごとに「何本片付けたか」だけを持つ（gc[g] 本のうち、混合基数 gm[g] の桁）。
-    struct Gr<'a> { its: &'a [It], gc: &'a [usize], gm: &'a [usize], pm: &'a [u32], done: usize }
+    // 桁はビット欄（gm[g] = 1 << 位置、幅は gc[g] が入る最小のビット数）にして、割り算を避ける。
+    struct Gr<'a> { its: &'a [It], gc: &'a [usize], gm: &'a [usize], sh: &'a [u32], mk: &'a [usize], pm: &'a [u32], done: usize }
     fn go(code: usize, o: u32, n: usize, colors: u32, gr: &Gr, memo: &mut Memo) -> u32 {
         if code == gr.done { return 0; }
         let (its, pm) = (gr.its, gr.pm);
@@ -240,7 +244,7 @@ fn jlb(s: &State, n: usize) -> u32 {
         if memo.stamp[key] == memo.ep { return memo.val[key] as u32; }
         let mut best = u32::MAX;
         for i in 0..d {
-            if code / gr.gm[i] % (gr.gc[i] + 1) == gr.gc[i] { continue; }
+            if code >> gr.sh[i] & gr.mk[i] == gr.gc[i] { continue; }
             let (c0, nk, ref keep, nf, ref full, cankeep) = its[i];
             let nm = code + gr.gm[i];
             if cankeep && o >> c0 & 1 == 0 {
@@ -252,7 +256,7 @@ fn jlb(s: &State, n: usize) -> u32 {
             let v = fc + go(nm, o, n, colors, gr, memo);
             if v < best { best = v; }
             let mut present = 0u32;
-            for j in 0..d { if nm / gr.gm[j] % (gr.gc[j] + 1) < gr.gc[j] { present |= pm[j]; } }
+            for j in 0..d { if nm >> gr.sh[j] & gr.mk[j] < gr.gc[j] { present |= pm[j]; } }
             let mut rest = colors & !o & present;
             while rest != 0 {
                 let c = rest.trailing_zeros();
@@ -290,9 +294,16 @@ fn jlb(s: &State, n: usize) -> u32 {
             let mut gi: Vec<It> = Vec::new();
             let mut gc: Vec<usize> = Vec::new();
             for it in its { if gi.last() == Some(&it) { *gc.last_mut().unwrap() += 1; } else { gi.push(it); gc.push(1); } }
-            let mut gm = Vec::with_capacity(gi.len());
-            let mut tot = 1usize;
-            for &c in &gc { gm.push(tot); tot *= c + 1; }
+            let (mut gm, mut sh, mut mk) = (Vec::new(), Vec::new(), Vec::new());
+            let mut bits = 0u32;
+            let mut done = 0usize;
+            for &c in &gc {
+                let w = usize::BITS - c.leading_zeros();
+                gm.push(1usize << bits); sh.push(bits); mk.push((1usize << w) - 1);
+                done |= c << bits;
+                bits += w;
+            }
+            let tot = done + 1;
             let its = gi;
             let size = tot << (n + 1);
             if stamp.len() < size { stamp.resize(size, 0); val.resize(size, 0); }
@@ -302,7 +313,7 @@ fn jlb(s: &State, n: usize) -> u32 {
             let pm: Vec<u32> = its.iter().map(|it| { let mut m = 0u32; for k in 1..=n { if it.4[k] > 0 { m |= 1 << k; } } m }).collect();
             // 空レーンの家: k0 に無い色から 0〜e 色（どのレーンにも出てこない色は足しても同じなので外す）
             let free = colors & !k0 & pm.iter().fold(0, |a, &m| a | m);
-            let gr = Gr { its: &its, gc: &gc, gm: &gm, pm: &pm, done: tot - 1 };
+            let gr = Gr { its: &its, gc: &gc, gm: &gm, sh: &sh, mk: &mk, pm: &pm, done };
             let mut sub = free;
             loop {
                 if (sub.count_ones() as usize) <= e {
@@ -422,7 +433,11 @@ fn jlb_ref(s: &State, n: usize) -> u32 {
 }
 /// J は各レーンの（底の色, 底の連続の長さ, その上の色ごとの個数）の多重集合だけで決まる（上の並び順に依らない）。
 /// その「形」を鍵にスレッドごとに覚えておく。
+static JCALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static JNANOS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static JLOOK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 fn jlb_cached(s: &State, n: usize) -> u32 {
+    JLOOK.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let mut key = [0u64; MAXL];
     for (i, &l) in s[..=n].iter().enumerate() {
         let ht = height(l);
@@ -438,7 +453,10 @@ fn jlb_cached(s: &State, n: usize) -> u32 {
     thread_local! { static C: std::cell::RefCell<HashMap<[u64; MAXL], u8>> = std::cell::RefCell::new(HashMap::new()); }
     C.with(|c| {
         if let Some(&v) = c.borrow().get(&key) { return v as u32; }
-        let v = jlb(s, n);
+        let t = std::time::Instant::now();
+        let v = if use_jref() { jlb_ref(s, n) } else { jlb(s, n) };
+        JCALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        JNANOS.fetch_add(t.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
         let mut m = c.borrow_mut();
         if m.len() > 2_000_000 { m.clear(); }
         m.insert(key, v.min(255) as u8);
@@ -520,6 +538,11 @@ fn japprox(s: &State, n: usize) -> u32 {
 fn use_japprox() -> bool {
     static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *F.get_or_init(|| std::env::var("COLORLB_JAPPROX").map(|v| v == "1").unwrap_or(false))
+}
+/// COLORLB_JREF=1 で以前の J（レーンを 1 本ずつ区別する版）を使う（速さの比較用）。
+fn use_jref() -> bool {
+    static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *F.get_or_init(|| std::env::var("COLORLB_JREF").is_ok())
 }
 fn use_joint() -> bool {
     static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -755,7 +778,7 @@ fn prove(n: usize, b: u32) {
             return;
         }
         total += next.len() as u64;
-        eprintln!("g={g} layer={} total={total} {:.1}s", next.len(), t0.elapsed().as_secs_f64());
+        eprintln!("g={g} layer={} total={total} {:.1}s J呼び出し {} 計算 {} 計 {:.1}s", next.len(), t0.elapsed().as_secs_f64(), JLOOK.load(std::sync::atomic::Ordering::Relaxed), JCALLS.load(std::sync::atomic::Ordering::Relaxed), JNANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9);
         if next.is_empty() { break; }
         prev = std::mem::replace(&mut layer, next);
     }
@@ -894,7 +917,7 @@ fn prove_w<const W: usize>(n: usize, b: u32) {
             return;
         }
         total += next.len() as u64;
-        eprintln!("g={g} layer={} total={total} {:.1}s", next.len(), t0.elapsed().as_secs_f64());
+        eprintln!("g={g} layer={} total={total} {:.1}s J呼び出し {} 計算 {} 計 {:.1}s", next.len(), t0.elapsed().as_secs_f64(), JLOOK.load(std::sync::atomic::Ordering::Relaxed), JCALLS.load(std::sync::atomic::Ordering::Relaxed), JNANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9);
         if next.is_empty() { break; }
         prev = std::mem::replace(&mut layer, next);
     }
