@@ -38,7 +38,7 @@ so this is a "transposition" of N stacks using one spare stack.
 | 14 | 285 | 463 | open | 351 |
 | 15 | 328 | 547 | open | 406 |
 | 16 | 374 | 656 | open | 465 |
-| 17 | 423 | 750 | open | 528 |
+| 17 | 423 | 743 | open | 528 |
 | 18 | 475 | 863 | open | 595 |
 | 19 | 530 | 1004 | open | 666 |
 | 20 | 588 | 1157 | open | 741 |
