@@ -54,7 +54,9 @@ The source of this table is [bounds.tsv](bounds.tsv). The last column is the qua
 - **Seven colours.** 72 ≤ T(7) ≤ 78. The upper bound is an explicit 78-move solution.
 - **General lower bound.** T(N) ≥ (3N² − N − 4)/2 for all N.
 - **Upper bounds.** Every upper bound in the table comes with an explicit move sequence in [solutions/](solutions/).
-  For N = 8…12 they come from beam search; for N = 13…24 from a construction (complete the upper half of the colours
+  For N = 9, 10, 11 they come from beam search followed by re-optimisation of solution tails. The 8-colour (106) and 12-colour (272)
+  solutions are earlier recorded solutions that this project has not improved; the 12-colour one was found by a search over macro-moves,
+  and the origin of the 8-colour one is not recorded. Both replay correctly. For N = 13…24 the bounds come from a construction (complete the upper half of the colours
   greedily, pouring two half-emptied lanes together to free a lane) followed by beam search. The values for N ≥ 13 are rough.
 - **Growth.** T(N) = Θ(N²) follows from Szegedy and Yu (see Prior work). The constant is open:
   the lower bound gives 1.5, and the fitted quadratic would give 2.
