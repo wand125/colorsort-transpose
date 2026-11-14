@@ -5,7 +5,7 @@ N	lower	lower_basis	upper	upper_source	solution
 5	36	全探索で確定（BFS/IDA*）	36	全探索で確定	solutions/best.tsv
 6	55	枝刈り全探索 prove 6 55（下界 J、471 万状態）で確定	55	自作: r1r2（確定）	solutions/best.tsv
 7	73	枝刈り全探索 prove 7 73（下界 J、675 万状態）	78	自作: colorsort3 window=6	solutions/best.tsv
-8	92	枝刈り全探索 prove 8 92（下界 J、33,108 状態）	106	既知: Docs 付録 A（既知、未確定）	solutions/docs_known.tsv
+8	93	枝刈り全探索 prove 8 93（下界 J、40 万状態）	106	既知: Docs 付録 A（既知、未確定）	solutions/docs_known.tsv
 9	116	枝刈り全探索 prove 9 116（下界 J、18,272 状態）	141	自作: N9 w1000000 	solutions/best.tsv
 10	143	h+D の一般式 (3N²−N−4)/2	180	自作: 解き直し（t=40、幅 3e5）	solutions/best.tsv
 11	174	h+D の一般式 (3N²−N−4)/2	229	自作: 反復解き直し（幅 3e5）	solutions/best.tsv
@@ -18,7 +18,7 @@ N	lower	lower_basis	upper	upper_source	solution
 18	475	h+D の一般式 (3N²−N−4)/2	863	自作: 半分割り＋下半分を幅 2e5 で解き直し	solutions/recur.tsv
 19	530	h+D の一般式 (3N²−N−4)/2	1004	自作: 半分割りの組み立て＋ビーム	solutions/halving_13_24.tsv
 20	588	h+D の一般式 (3N²−N−4)/2	1157	自作: 半分割り＋下半分を幅 2e5 で解き直し	solutions/recur.tsv
-21	649	h+D の一般式 (3N²−N−4)/2	1360	自作: 半分割り＋m 色の解の当てはめ＋ビーム	solutions/recur.tsv
+21	649	h+D の一般式 (3N²−N−4)/2	1336	自作: 半分割り＋下半分を幅 2e5 で解き直し	solutions/recur.tsv
 22	713	h+D の一般式 (3N²−N−4)/2	1477	自作: 半分割り＋11 色の解の当てはめ＋ビーム	solutions/recur.tsv
 23	780	h+D の一般式 (3N²−N−4)/2	1692	自作: 半分割り＋m 色の解の当てはめ＋ビーム	solutions/recur.tsv
 24	850	h+D の一般式 (3N²−N−4)/2	1873	自作: 半分割り＋m 色の解の当てはめ＋ビーム（幅 3e5）	solutions/recur.tsv

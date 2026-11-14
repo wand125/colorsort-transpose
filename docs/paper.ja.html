@@ -82,7 +82,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\
     <tr><td class="num">5</td><td class="num">36</td><td class="num">36</td><td><span class="tag exact">確定</span></td><td>全探索</td><td>最短の手順</td><td class="num">36</td></tr>
     <tr><td class="num">6</td><td class="num">55</td><td class="num">55</td><td><span class="tag exact">確定</span></td><td>下界 J を使った枝刈り全探索</td><td>2 つの規則で制限した探索</td><td class="num">55</td></tr>
     <tr><td class="num">7</td><td class="num">73</td><td class="num">78</td><td><span class="tag">未確定</span></td><td>下界 J を使った枝刈り全探索</td><td>ビーム探索</td><td class="num">78</td></tr>
-    <tr><td class="num">8</td><td class="num">92</td><td class="num">106</td><td><span class="tag">未確定</span></td><td>下界 J を使った枝刈り全探索</td><td>以前から記録されていた手順</td><td class="num">105</td></tr>
+    <tr><td class="num">8</td><td class="num">93</td><td class="num">106</td><td><span class="tag">未確定</span></td><td>下界 J を使った枝刈り全探索</td><td>以前から記録されていた手順</td><td class="num">105</td></tr>
     <tr><td class="num">9</td><td class="num">116</td><td class="num">141</td><td><span class="tag">未確定</span></td><td>下界 J を使った枝刈り全探索</td><td>ビーム探索</td><td class="num">136</td></tr>
     <tr><td class="num">10</td><td class="num">143</td><td class="num">180</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>ビーム探索</td><td class="num">171</td></tr>
     <tr><td class="num">11</td><td class="num">174</td><td class="num">229</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>ビーム探索</td><td class="num">210</td></tr>
@@ -95,7 +95,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\
     <tr><td class="num">18</td><td class="num">475</td><td class="num">863</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">595</td></tr>
     <tr><td class="num">19</td><td class="num">530</td><td class="num">1,004</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">666</td></tr>
     <tr><td class="num">20</td><td class="num">588</td><td class="num">1,157</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">741</td></tr>
-    <tr><td class="num">21</td><td class="num">649</td><td class="num">1,360</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">820</td></tr>
+    <tr><td class="num">21</td><td class="num">649</td><td class="num">1,336</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">820</td></tr>
     <tr><td class="num">22</td><td class="num">713</td><td class="num">1,477</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">903</td></tr>
     <tr><td class="num">23</td><td class="num">780</td><td class="num">1,692</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">990</td></tr>
     <tr><td class="num">24</td><td class="num">850</td><td class="num">1,873</td><td><span class="tag">未確定</span></td><td>一般式 (3N²−N−4)/2</td><td>組み立てとビーム探索</td><td class="num">1,081</td></tr>
@@ -179,7 +179,7 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\
   <caption>表 2. \(T(6)\ge B\) の探索でたどった状態の数（枝刈りに使った下界ごと）。実行した探索は、どれも完成形に届かずに終わった。</caption>
 </table>
 </div>
-<p>\(J\) による \(B=55\) の探索は、デスクトップ計算機 1 台で 2,528 秒かかった。7 節の 55 手の手順と合わせて \(T(6)=55\) を得る。7 色では、同じ探索で \(T(7)\ge71\)（82,727 状態）、\(T(7)\ge72\)（800,114 状態）、\(T(7)\ge73\)（6,755,298 状態）を得た。\(B\) を 1 上げるごとに、状態数は 7〜10 倍になる。8 色では、同じ探索で \(T(8)\ge91\)（3,925 状態）と \(T(8)\ge92\)（33,108 状態）を得た。定理 1 の値より 2 大きい。9 色では \(T(9)\ge116\)（18,272 状態）を得た。定理 1 の値より 1 大きい。</p>
+<p>\(J\) による \(B=55\) の探索は、デスクトップ計算機 1 台で 2,528 秒かかった。7 節の 55 手の手順と合わせて \(T(6)=55\) を得る。7 色では、同じ探索で \(T(7)\ge71\)（82,727 状態）、\(T(7)\ge72\)（800,114 状態）、\(T(7)\ge73\)（6,755,298 状態）を得た。\(B\) を 1 上げるごとに、状態数は 7〜10 倍になる。8 色では、同じ探索で \(T(8)\ge91\)（3,925 状態）、\(T(8)\ge92\)（33,108 状態）、\(T(8)\ge93\)（401,839 状態）を得た。定理 1 の値より 3 大きい。9 色では \(T(9)\ge116\)（18,272 状態）を得た。定理 1 の値より 1 大きい。</p>
 </section>
 
 <section id="upper" class="prose">
