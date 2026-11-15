@@ -378,7 +378,7 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
             for _ in 0..k { let b = mm & mm.wrapping_neg(); lo |= b; mm &= mm - 1; }
             o = (o & !m) | lo;
         }
-        let (its, pm) = (gr.its, gr.pm);
+        let its = gr.its;
         let d = its.len();
         let key = (code << (n + 1)) | o as usize;
         let mut stored = if memo.stamp[key] == memo.ep { memo.val[key] as u32 } else { 0 };
@@ -488,12 +488,22 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
         // 手の候補を集め、(費用 + 残りの静的な下限, 足す色が残りに多い順) で並べてから試す。予算内の道が早く見つかる。
         let mut opts: [(u32, u32, usize, u32); 192] = [(0, 0, 0, 0); 192];
         let mut no = 0usize;
+        // 残りのレーン全部の「全部の表」の色ごとの個数と、色ごとの「残す」ができるレーンの本数。手ごとにはそのレーンの分を 1 本引くだけにする。
+        let mut call = [0u32; 16];
+        let mut kc = [0u32; 16];
+        for j in 0..d {
+            let left = (gr.gc[j] - (code >> gr.sh[j] & gr.mk[j])) as u32;
+            if left > 0 {
+                for k in 1..=n { call[k] += left * its[j].4[k] as u32; }
+                if its[j].5 { kc[its[j].0 as usize] += left; }
+            }
+        }
         for i in 0..d {
             if code >> gr.sh[i] & gr.mk[i] == gr.gc[i] { continue; }
             let (c0, nk, ref keep, nf, ref full, cankeep) = its[i];
             let nm = code + gr.gm[i];
             let hn = h - lbi(i);
-            let _ = (nk, keep, nf, full);
+            let _ = (nk, keep, nf);
             if cankeep && o >> c0 & 1 == 0 {
                 let c = memo.cpc[cb + i * CW + 17];
                 if c + hn > budget { best = best.min(c + hn); } else if no < 192 { opts[no] = (c + hn, 0, nm, (o | 1 << c0) | (c << 24)); no += 1; }
@@ -501,13 +511,31 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
             let fc = memo.cpc[cb + i * CW + 16];
             if fc + hn > budget { best = best.min(fc + hn); continue; }
             let mut present = 0u32;
+            let mut kmask = 0u32;
             let mut cnt = [0u32; 16];
-            for j in 0..d {
-                let left = (gr.gc[j] - (nm >> gr.sh[j] & gr.mk[j])) as u32;
-                if left > 0 { present |= pm[j]; for k in 1..=n { cnt[k] += left * its[j].4[k] as u32; } }
+            for k in 1..=n {
+                cnt[k] = call[k] - full[k] as u32;
+                if cnt[k] > 0 { present |= 1 << k; }
+                if kc[k] > (cankeep && k == c0 as usize) as u32 { kmask |= 1 << k; }
             }
-            if no < 192 { opts[no] = (fc + hn, 255, nm, o | (fc << 24)); no += 1; }
             let mut rest = colors & !o & present;
+            let mut add_none = true;
+            if use_dom() {
+                // 支配される候補を外す（最小値は変わらない。LOWER_BOUND_PROOF.md の「支配される手」）。
+                // kmask: このあと残るレーンのうち「残す」ができるものの底の色。これに入らない色 c は家に足しても損をしない
+                // （V(R, o∪{c}) ≤ V(R, o)）。
+                let kp = cankeep && o >> c0 & 1 == 0;
+                // (a) 「残す」ができるとき、「全部出して c0 を足す」は同じ o に高い費用で着くので外す。
+                if kp { rest &= !(1u32 << c0); }
+                // (b) 対称な色の組の中では、足す色は 1 色だけ試せばよい（詰め直すと同じ局面になる）。
+                for &m in gr.cls {
+                    let av = rest & m;
+                    if av != 0 { rest = (rest & !m) | (av & av.wrapping_neg()); }
+                }
+                // (c) 何も足さない手は、kmask に入らない色を足す手か、（c0 が kmask に入らないなら）「残す」に負ける。
+                if rest & !kmask != 0 || (kp && kmask >> c0 & 1 == 0) { add_none = false; }
+            }
+            if add_none && no < 192 { opts[no] = (fc + hn, 255, nm, o | (fc << 24)); no += 1; }
             while rest != 0 {
                 let c = rest.trailing_zeros();
                 rest &= rest - 1;
@@ -516,8 +544,11 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
         }
         assert!(no < 192);
         let ops = &mut opts[..no];
-        if use_order() { ops.sort_unstable_by_key(|x| (x.0, x.1)); }
-        for &(_, _, nm, oc) in ops.iter() {
+        let mut ord = [0u64; 192];
+        for (t, x) in ops.iter().enumerate() { ord[t] = if use_order() { (x.0 as u64) << 40 | (x.1 as u64) << 32 } else { 0 } | t as u64; }
+        if use_order() { ord[..no].sort_unstable(); }
+        for &w in &ord[..no] {
+            let (_, _, nm, oc) = ops[(w & 0xffff_ffff) as usize];
             let (c, no2) = (oc >> 24, oc & 0xff_ffff);
             let v = c + go(nm, no2, budget - c, n, colors, gr, memo);
             if v <= budget { return v; }
@@ -941,6 +972,10 @@ fn use_sym() -> bool {
 fn late_dprime() -> bool {
     static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *F.get_or_init(|| std::env::var("COLORLB_EARLYDP").is_err())
+}
+fn use_dom() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("COLORLB_NODOM").is_err())
 }
 fn use_hdyn() -> bool {
     static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
