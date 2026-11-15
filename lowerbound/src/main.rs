@@ -381,7 +381,8 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
         let its = gr.its;
         let d = its.len();
         let key = (code << (n + 1)) | o as usize;
-        let mut stored = if memo.stamp[key] == memo.ep { memo.val[key] as u32 } else { 0 };
+        // 記録は 1 語に「世代（上 24 ビット）と値（下 8 ビット）」をまとめて持つ（1 回の読み出しで済ませる）
+        let mut stored = { let w = memo.stamp[key]; if w >> 8 == memo.ep { w & 255 } else { 0 } };
         if stored > budget { return stored; }
         // 呼び出しをまたぐ表: 部分問題の値は「残りのレーンの形の多重集合」と（対称性で詰め直した）o だけで決まる。
         // 表には下限だけを入れる（予算内で打ち切った値は入れない）ので、どの呼び出しで使っても下限のまま。鍵は丸ごと比べる。
@@ -481,7 +482,7 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
         let h_dyn = h + add;
         let mut best = h_dyn.max(stored);
         if best > budget {
-            memo.stamp[key] = memo.ep; memo.val[key] = best.min(254) as u8;
+            memo.stamp[key] = memo.ep << 8 | best.min(254);
             return best;
         }
         best = u32::MAX;
@@ -555,8 +556,7 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
             best = best.min(v);
         }
         let best = best.max(stored);
-        memo.stamp[key] = memo.ep;
-        memo.val[key] = best.min(254) as u8;
+        memo.stamp[key] = memo.ep << 8 | best.min(254);
         if tslot != usize::MAX {
             let tk = mk_key(gr);
             let ent = &mut memo.tt[tslot];
@@ -607,9 +607,10 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
             let tot = done + 1;
             let its = gi;
             let size = tot << (n + 1);
-            if stamp.len() < size { stamp.resize(size, 0); val.resize(size, 0); }
-            *epoch = epoch.wrapping_add(1);
-            if *epoch == 0 { stamp.iter_mut().for_each(|x| *x = 0); *epoch = 1; }
+            if stamp.len() < size { stamp.resize(size, 0); }
+            let _ = &val;
+            *epoch += 1;
+            if *epoch >= 1 << 24 { stamp.iter_mut().for_each(|x| *x = 0); *epoch = 1; }
             let no = 1usize << (n + 1);
             if cps.len() < no { cps.resize(no, 0); }
             if cpc.len() < no * its.len() * 18 { cpc.resize(no * its.len() * 18, 0); }
@@ -646,9 +647,13 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
             let mut ord: Vec<usize> = (0..its.len()).collect();
             ord.sort_unstable_by_key(|&i| sg[i]);
             let gr = Gr { its: &its, gc: &gc, gm: &gm, sh: &sh, mk: &mk, pm: &pm, done, cls: &cls, sg: &sg, zg: &zg, ord: &ord };
+            // 空レーンの家の選び方も、補題（9 番）で負ける選び方を外す: e 色に満たず、まだ足せる色のうち K に入らないものがあるなら、
+            // それを足した選び方に負けない。
+            let kall = its.iter().filter(|it| it.5).fold(0u32, |a, it| a | 1 << it.0);
             let mut sub = free;
             loop {
-                if (sub.count_ones() as usize) <= e {
+                let dominated = use_dom() && (sub.count_ones() as usize) < e && free & !sub & !kall != 0;
+                if (sub.count_ones() as usize) <= e && !dominated {
                     let v = go(0, k0 | sub, thr, n, colors, &gr, &mut memo);
                     JNODES.fetch_add(std::mem::take(&mut memo.nodes), std::sync::atomic::Ordering::Relaxed);
                     if v <= thr { return v; }
