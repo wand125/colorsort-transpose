@@ -28,7 +28,7 @@ so this is a "transposition" of N stacks using one spare stack.
 | 4 | 21 | 21 | **exact** | 21 |
 | 5 | 36 | 36 | **exact** | 36 |
 | 6 | 55 | 55 | **exact** | 55 |
-| 7 | 73 | 78 | open | 78 |
+| 7 | 74 | 78 | open | 78 |
 | 8 | 93 | 106 | open | 105 |
 | 9 | 117 | 141 | open | 136 |
 | 10 | 144 | 180 | open | 171 |
@@ -53,7 +53,7 @@ The source of this table is [bounds.tsv](bounds.tsv). The last column is the qua
 - **Exact values.** T(2..6) = 3, 10, 21, 36, 55. The values for N ≤ 5 were known from exhaustive search (see Prior work).
   T(6) = 55 is established here: a 55-move solution exists, and a pruned breadth-first search with an admissible
   lower bound shows that no solution of 54 moves or fewer exists (4.7 million states).
-- **Seven to ten colours.** 73 ≤ T(7) ≤ 78, 93 ≤ T(8) ≤ 106, 117 ≤ T(9) ≤ 141 and 144 ≤ T(10) ≤ 180; the lower bounds come from the same pruned search, and the upper bounds are explicit solutions.
+- **Seven to ten colours.** 74 ≤ T(7) ≤ 78, 93 ≤ T(8) ≤ 106, 117 ≤ T(9) ≤ 141 and 144 ≤ T(10) ≤ 180; the lower bounds come from the same pruned search, and the upper bounds are explicit solutions.
 - **General lower bound.** T(N) ≥ (3N² − N − 4)/2 for all N.
 - **Upper bounds.** Every upper bound in the table comes with an explicit move sequence in [solutions/](solutions/).
   For N = 9, 10, 11 they come from beam search followed by re-optimisation of solution tails. The 8-colour (106) and 12-colour (272)
@@ -77,7 +77,7 @@ The source of this table is [bounds.tsv](bounds.tsv). The last column is the qua
 
 Checked against exact distances: no violation on all 37.45 million states for N = 4. The mean gap between J and the true distance there is 0.92.
 With J, the search that proves T(6) ≥ 55 visits 4.7 million states; with h + D the search for T(6) ≥ 52 alone visited 325 million.
-The logs of the deciding runs are `results/logs/prove6J_55_final.log` (T(6) ≥ 55) `results/logs/prove7J_73_final.log` (T(7) ≥ 73), `results/logs/prove8J_93.log` (T(8) ≥ 93) , `results/logs/prove9J_117.log` (T(9) ≥ 117) and `results/logs/prove10J_144.log` (T(10) ≥ 144).
+The logs of the deciding runs are `results/logs/prove6J_55_final.log` (T(6) ≥ 55) `results/logs/prove7J_74.log` (T(7) ≥ 74), `results/logs/prove8J_93.log` (T(8) ≥ 93) , `results/logs/prove9J_117.log` (T(9) ≥ 117) and `results/logs/prove10J_144.log` (T(10) ≥ 144).
 
 ## Verify
 
