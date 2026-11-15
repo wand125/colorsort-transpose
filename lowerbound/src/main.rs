@@ -354,7 +354,7 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
         items.push((c0, (ht - r) as u8, keep, ht as u8, full, true));
     }
     let colors: u32 = ((1u32 << (n + 1)) - 1) & !1;
-    struct Memo<'a> { stamp: &'a mut Vec<u32>, val: &'a mut Vec<u8>, ep: u32 }
+    struct Memo<'a> { stamp: &'a mut Vec<u32>, val: &'a mut Vec<u8>, ep: u32, tt: &'a mut Vec<(u64, [u64; 14], u8)>, ttmask: usize, ttmin: usize, nodes: u64, cps: &'a mut Vec<u32>, cpc: &'a mut Vec<u32>, cep: u32 }
     fn cost(cnt: &[u8; 16], o: u32, n: usize) -> u32 {
         let mut c = 0u32;
         for k in 1..=n { if o >> k & 1 == 0 { c += cnt[k] as u32; } }
@@ -364,10 +364,10 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
     // （底の色 c0 のレーンが残っていれば c0 は表に出る）ので、足す色の候補から外す（最小値は変わらない）。
     // 同じ形のレーンは入れ替えても値が同じなので、形ごとに「何本片付けたか」だけを持つ（gc[g] 本のうち、混合基数 gm[g] の桁）。
     // 桁はビット欄（gm[g] = 1 << 位置、幅は gc[g] が入る最小のビット数）にして、割り算を避ける。
-    struct Gr<'a> { its: &'a [It], gc: &'a [usize], gm: &'a [usize], sh: &'a [u32], mk: &'a [usize], pm: &'a [u32], done: usize, cls: &'a [u32] }
+    struct Gr<'a> { its: &'a [It], gc: &'a [usize], gm: &'a [usize], sh: &'a [u32], mk: &'a [usize], pm: &'a [u32], done: usize, cls: &'a [u32], sg: &'a [u64], zg: &'a [u64], ord: &'a [usize] }
     fn go(code: usize, o: u32, budget: u32, n: usize, colors: u32, gr: &Gr, memo: &mut Memo) -> u32 {
         if code == gr.done { return 0; }
-        JNODES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        memo.nodes += 1;
         // 色の対称性: どのレーンの表でも個数が同じで、どのレーンの底の色でもない色どうしは入れ替えても値が同じ。
         // 同じ組の中では「何色開いているか」だけを残し、開いている色を組の小さい番号から詰め直す。
         let mut o = o;
@@ -381,8 +381,42 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
         let (its, pm) = (gr.its, gr.pm);
         let d = its.len();
         let key = (code << (n + 1)) | o as usize;
-        let stored = if memo.stamp[key] == memo.ep { memo.val[key] as u32 } else { 0 };
+        let mut stored = if memo.stamp[key] == memo.ep { memo.val[key] as u32 } else { 0 };
         if stored > budget { return stored; }
+        // 呼び出しをまたぐ表: 部分問題の値は「残りのレーンの形の多重集合」と（対称性で詰め直した）o だけで決まる。
+        // 表には下限だけを入れる（予算内で打ち切った値は入れない）ので、どの呼び出しで使っても下限のまま。鍵は丸ごと比べる。
+        // 鍵（形の符号を整列したもの + o）は、指紋（散らし値）が合ったときと書き込むときにだけ作る。
+        let mk_key = |gr: &Gr| -> [u64; 14] {
+            let mut tk = [0u64; 14];
+            let mut m = 0usize;
+            for &i in gr.ord {
+                let left = gr.gc[i] - (code >> gr.sh[i] & gr.mk[i]);
+                for _ in 0..left { tk[m] = gr.sg[i]; m += 1; }
+            }
+            tk[13] = o as u64;
+            tk
+        };
+        let mut tslot = usize::MAX;
+        let mut tfp = 0u64;
+        if memo.ttmin > 0 {
+            let mut m = 0usize;
+            let mut hsh = 0u64;
+            for i in 0..d {
+                let left = gr.gc[i] - (code >> gr.sh[i] & gr.mk[i]);
+                m += left;
+                hsh = hsh.wrapping_add((left as u64).wrapping_mul(gr.zg[i]));
+            }
+            if m >= memo.ttmin {
+                hsh = (hsh ^ (o as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)).wrapping_mul(0xFF51_AFD7_ED55_8CCD);
+                hsh ^= hsh >> 31;
+                tslot = (hsh as usize) & memo.ttmask;
+                tfp = hsh | 1;
+                if memo.tt[tslot].0 == tfp && memo.tt[tslot].1 == mk_key(gr) {
+                    stored = stored.max(memo.tt[tslot].2 as u32);
+                    if stored > budget { return stored; }
+                }
+            }
+        }
         // 残りのレーンの静的な下限: 残せるなら「残す」の動く数、残せないなら全部
         let lbi = |i: usize| -> u32 { if its[i].5 { its[i].1 as u32 } else { its[i].3 as u32 } };
         let mut h = 0u32;
@@ -391,7 +425,39 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
         // 順番 p 番目（0 始まり）に片付けるレーンより前に開く色は高々 p 色。そのレーンの余分（家の開いていない色の玉）は、
         // 開いていない色の個数の多い順に p 色ぶんを引いた値以上。各 p で余分の下限が最小のレーンを取って足しても下限のまま
         // （どの並べ方でも、p 番目のレーンの余分はその最小以上）。
-        let mut cp = [[0u32; 16]; MAXL];
+        // レーンの形 i と o だけで決まる値（cp[q]・全部出す費用 xf・残す費用 xk）は、o ごとに 1 回だけ作って覚える（呼び出しの中で使い回す）。
+        const CW: usize = 18;
+        let cb = o as usize * d * CW;
+        if memo.cps[o as usize] != memo.cep {
+            for i in 0..d {
+                let (c0, nk, ref keep, nf, ref full, cankeep) = its[i];
+                let reduce = |t: &[u8; 16], skip: u8| -> [u32; 16] {
+                    let mut v: [u8; 16] = [0; 16];
+                    let mut m = 0;
+                    for k in 1..=n { if o >> k & 1 == 0 && k as u8 != skip && t[k] > 0 { v[m] = t[k]; m += 1; } }
+                    v[..m].sort_unstable_by(|a, b| b.cmp(a));
+                    let mut pre = [0u32; 16];
+                    for q in 0..15 { pre[q + 1] = pre[q] + if q < m { v[q] as u32 } else { 0 }; }
+                    pre
+                };
+                let pf = reduce(full, 0);
+                let xf = nf as u32 + cost(full, o, n);
+                let kp = cankeep && o >> c0 & 1 == 0;
+                let pk = if kp { reduce(keep, c0) } else { [0; 16] };
+                let xk = if kp { nk as u32 + cost(keep, o, n) } else { u32::MAX };
+                let li = lbi(i);
+                let row = &mut memo.cpc[cb + i * CW..cb + (i + 1) * CW];
+                for q in 0..=n.min(14) {
+                    let mut v = xf - pf[q];
+                    if kp { v = v.min(xk - pk[q]); }
+                    row[q] = v.saturating_sub(li);
+                }
+                row[16] = xf;
+                row[17] = xk;
+            }
+            memo.cps[o as usize] = memo.cep;
+        }
+        let mut live = [0usize; MAXL];
         let mut r = 0usize;
         let mut ng = 0usize;
         for i in 0..d {
@@ -399,27 +465,7 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
             if left == 0 { continue; }
             h += left * lbi(i);
             r += left as usize;
-            let (c0, nk, ref keep, nf, ref full, cankeep) = its[i];
-            let reduce = |t: &[u8; 16], skip: u8| -> [u32; 16] {
-                let mut v: [u8; 16] = [0; 16];
-                let mut m = 0;
-                for k in 1..=n { if o >> k & 1 == 0 && k as u8 != skip && t[k] > 0 { v[m] = t[k]; m += 1; } }
-                v[..m].sort_unstable_by(|a, b| b.cmp(a));
-                let mut pre = [0u32; 16];
-                for q in 0..15 { pre[q + 1] = pre[q] + if q < m { v[q] as u32 } else { 0 }; }
-                pre
-            };
-            let pf = reduce(full, 0);
-            let xf = nf as u32 + cost(full, o, n);
-            let kp = cankeep && o >> c0 & 1 == 0;
-            let pk = if kp { reduce(keep, c0) } else { [0; 16] };
-            let xk = if kp { nk as u32 + cost(keep, o, n) } else { u32::MAX };
-            let li = lbi(i);
-            for q in 0..=n.min(14) {
-                let mut v = xf - pf[q];
-                if kp { v = v.min(xk - pk[q]); }
-                cp[ng][q] = v.saturating_sub(li);
-            }
+            live[ng] = i;
             ng += 1;
         }
         let mut add = 0u32;
@@ -427,7 +473,7 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
             for q in 0..r {
                 let qq = q.min(n.min(14));
                 let mut m = u32::MAX;
-                for g in 0..ng { m = m.min(cp[g][qq]); }
+                for g in 0..ng { m = m.min(memo.cpc[cb + live[g] * CW + qq]); }
                 if m == 0 { break; }
                 add += m;
             }
@@ -447,11 +493,12 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
             let (c0, nk, ref keep, nf, ref full, cankeep) = its[i];
             let nm = code + gr.gm[i];
             let hn = h - lbi(i);
+            let _ = (nk, keep, nf, full);
             if cankeep && o >> c0 & 1 == 0 {
-                let c = nk as u32 + cost(keep, o, n);
+                let c = memo.cpc[cb + i * CW + 17];
                 if c + hn > budget { best = best.min(c + hn); } else if no < 192 { opts[no] = (c + hn, 0, nm, (o | 1 << c0) | (c << 24)); no += 1; }
             }
-            let fc = nf as u32 + cost(full, o, n);
+            let fc = memo.cpc[cb + i * CW + 16];
             if fc + hn > budget { best = best.min(fc + hn); continue; }
             let mut present = 0u32;
             let mut cnt = [0u32; 16];
@@ -479,10 +526,21 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
         let best = best.max(stored);
         memo.stamp[key] = memo.ep;
         memo.val[key] = best.min(254) as u8;
+        if tslot != usize::MAX {
+            let tk = mk_key(gr);
+            let ent = &mut memo.tt[tslot];
+            if ent.0 == tfp && ent.1 == tk { ent.2 = ent.2.max(best.min(254) as u8); } else { *ent = (tfp, tk, best.min(254) as u8); }
+        }
         best
     }
     thread_local! { static JTBUF: std::cell::RefCell<(Vec<u32>, Vec<u8>, u32)> = std::cell::RefCell::new((Vec::new(), Vec::new(), 0)); }
-    JTBUF.with(|cell| {
+    thread_local! { static JTT: std::cell::RefCell<(Vec<(u64, [u64; 14], u8)>, Vec<u32>, Vec<u32>, u32)> = std::cell::RefCell::new((Vec::new(), Vec::new(), Vec::new(), 0)); }
+    let ttmin = tt_min();
+    JTT.with(|ttcell| JTBUF.with(|cell| {
+        let mut ttall = ttcell.borrow_mut();
+        let (ttg, cps, cpc, cep) = &mut *ttall;
+        if ttmin > 0 && ttg.is_empty() { *ttg = vec![(0u64, [0u64; 14], 0u8); 1usize << tt_bits()]; }
+        let ttmask = ttg.len().wrapping_sub(1);
         let mut guard = cell.borrow_mut();
         let (stamp, val, epoch) = &mut *guard;
         let mut best = u32::MAX;
@@ -521,7 +579,12 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
             if stamp.len() < size { stamp.resize(size, 0); val.resize(size, 0); }
             *epoch = epoch.wrapping_add(1);
             if *epoch == 0 { stamp.iter_mut().for_each(|x| *x = 0); *epoch = 1; }
-            let mut memo = Memo { stamp: &mut *stamp, val: &mut *val, ep: *epoch };
+            let no = 1usize << (n + 1);
+            if cps.len() < no { cps.resize(no, 0); }
+            if cpc.len() < no * its.len() * 18 { cpc.resize(no * its.len() * 18, 0); }
+            *cep = cep.wrapping_add(1);
+            if *cep == 0 { cps.iter_mut().for_each(|x| *x = 0); *cep = 1; }
+            let mut memo = Memo { stamp: &mut *stamp, val: &mut *val, ep: *epoch, tt: &mut *ttg, ttmask, ttmin, nodes: 0, cps: &mut *cps, cpc: &mut *cpc, cep: *cep };
             let pm: Vec<u32> = its.iter().map(|it| { let mut m = 0u32; for k in 1..=n { if it.4[k] > 0 { m |= 1 << k; } } m }).collect();
             // 空レーンの家: k0 に無い色から 0〜e 色（どのレーンにも出てこない色は足しても同じなので外す）
             let free = colors & !k0 & pm.iter().fold(0, |a, &m| a | m);
@@ -542,11 +605,21 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
                     if m.count_ones() > 1 { cls.push(m); }
                 }
             }
-            let gr = Gr { its: &its, gc: &gc, gm: &gm, sh: &sh, mk: &mk, pm: &pm, done, cls: &cls };
+            // レーンの形の符号（底の色・底の同色の数・残せるか・残す表の各色の個数）。形が同じなら同じ値、違えば違う値。
+            let sg: Vec<u64> = its.iter().map(|it| {
+                let mut x = (it.0 as u64) << 60 | ((it.3 - it.1) as u64) << 56 | (it.5 as u64) << 55;
+                for k in 1..=n { x |= (it.2[k] as u64) << (4 * (k - 1)); }
+                x
+            }).collect();
+            let zg: Vec<u64> = sg.iter().map(|&x| { let mut z = x.wrapping_mul(0xC2B2_AE3D_27D4_EB4F); z ^= z >> 29; z.wrapping_mul(0x1656_67B1_9E37_79F9) | 1 }).collect();
+            let mut ord: Vec<usize> = (0..its.len()).collect();
+            ord.sort_unstable_by_key(|&i| sg[i]);
+            let gr = Gr { its: &its, gc: &gc, gm: &gm, sh: &sh, mk: &mk, pm: &pm, done, cls: &cls, sg: &sg, zg: &zg, ord: &ord };
             let mut sub = free;
             loop {
                 if (sub.count_ones() as usize) <= e {
                     let v = go(0, k0 | sub, thr, n, colors, &gr, &mut memo);
+                    JNODES.fetch_add(std::mem::take(&mut memo.nodes), std::sync::atomic::Ordering::Relaxed);
                     if v <= thr { return v; }
                     if v < best { best = v; }
                 }
@@ -555,7 +628,17 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
             }
         }
         best
-    })
+    }))
+}
+/// 呼び出しをまたぐ表を使う最小の残りレーン数（0 で使わない）。COLORLB_TT=k
+fn tt_min() -> usize {
+    static V: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("COLORLB_TT").ok().and_then(|v| v.parse().ok()).unwrap_or(0))
+}
+/// 表の大きさ（2^bits 項目、1 項目 120 バイト、スレッドごと）。COLORLB_TTBITS
+fn tt_bits() -> u32 {
+    static V: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("COLORLB_TTBITS").ok().and_then(|v| v.parse().ok()).unwrap_or(20))
 }
 /// 以前の J（レーンを 1 本ずつ区別する版）。jtime で新しい版と値を突き合わせる用。
 #[allow(dead_code)]
@@ -672,6 +755,7 @@ static JQUICK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(
 static JLOOK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 /// J ≤ thr かどうか（閾値つき）。レーンの形を鍵に、分かった上限と下限をスレッドごとに覚える。
 fn jle_cached(s: &State, n: usize, thr: u32) -> bool {
+    if use_shared() { return jle_shared(s, n, thr); }
     JLOOK.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let key = jkey(s, n);
     thread_local! { static CT: std::cell::RefCell<HashMap<[u64; MAXL], (u8, u8)>> = std::cell::RefCell::new(HashMap::new()); }
@@ -694,6 +778,36 @@ fn jle_cached(s: &State, n: usize, thr: u32) -> bool {
         if r <= thr { e.1 = e.1.min(r.min(255) as u8); } else { e.0 = e.0.max(r.min(254) as u8); }
         r <= thr
     })
+}
+/// 形ごとの記録を全スレッドで共有する版（COLORLB_SHARED=1）。鍵の散らし値で 256 に分けた錠つきの表。
+fn use_shared() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("COLORLB_SHARED").map(|v| v == "1").unwrap_or(false))
+}
+fn jle_shared(s: &State, n: usize, thr: u32) -> bool {
+    use std::sync::Mutex;
+    static SH: std::sync::OnceLock<Vec<Mutex<HashMap<[u64; MAXL], (u8, u8)>>>> = std::sync::OnceLock::new();
+    let sh = SH.get_or_init(|| (0..256).map(|_| Mutex::new(HashMap::new())).collect());
+    JLOOK.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let key = jkey(s, n);
+    let mut hsh = 0u64;
+    for &x in &key { hsh = (hsh ^ x).wrapping_mul(0xFF51_AFD7_ED55_8CCD).rotate_left(23); }
+    let part = &sh[(hsh >> 56) as usize];
+    let (lo, hi) = part.lock().unwrap().get(&key).copied().unwrap_or((0, 255));
+    if (hi as u32) <= thr { return true; }
+    if (lo as u32) > thr { return false; }
+    let t = std::time::Instant::now();
+    let r = { let ja = if use_quick() { japprox(s, n) } else { u32::MAX }; if ja <= thr { JQUICK.fetch_add(1, std::sync::atomic::Ordering::Relaxed); ja } else { jlb_thr(s, n, thr) } };
+    JCALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dt = t.elapsed().as_nanos() as u64;
+    JNANOS.fetch_add(dt, std::sync::atomic::Ordering::Relaxed);
+    if r <= thr { JACC.fetch_add(1, std::sync::atomic::Ordering::Relaxed); JACCNS.fetch_add(dt, std::sync::atomic::Ordering::Relaxed); }
+    let mut m = part.lock().unwrap();
+    // 1 区画 5 万件（全体 1280 万件、約 1.5GB）を超えたらその区画だけ消す
+    if m.len() > 50_000 { m.clear(); }
+    let e = m.entry(key).or_insert((0, 255));
+    if r <= thr { e.1 = e.1.min(r.min(255) as u8); } else { e.0 = e.0.max(r.min(254) as u8); }
+    r <= thr
 }
 fn jkey(s: &State, n: usize) -> [u64; MAXL] {
     let mut key = [0u64; MAXL];
