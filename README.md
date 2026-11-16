@@ -35,7 +35,7 @@ so this is a "transposition" of N stacks using one spare stack.
 | 11 | 175 | 229 | open | 210 |
 | 12 | 208 | 272 | open | 253 |
 | 13 | 245 | 365 | open | 300 |
-| 14 | 285 | 447 | open | 351 |
+| 14 | 285 | 446 | open | 351 |
 | 15 | 328 | 547 | open | 406 |
 | 16 | 374 | 646 | open | 465 |
 | 17 | 423 | 743 | open | 528 |
@@ -58,7 +58,7 @@ The source of this table is [bounds.tsv](bounds.tsv). The last column is the qua
 - **Upper bounds.** Every upper bound in the table comes with an explicit move sequence in [solutions/](solutions/).
   For N = 9, 10, 11 they come from beam search followed by re-optimisation of solution tails. The 8-colour (106) and 12-colour (272)
   solutions are earlier recorded solutions that this project has not improved; the 12-colour one was found by a search over macro-moves,
-  and the origin of the 8-colour one is not recorded. Both replay correctly. The 13- and 14-colour bounds (365, 447) come from a beam search with 10^6 states per layer followed by re-solving the tail. For N = 15…24 the bounds come from a construction (complete the upper half of the colours
+  and the origin of the 8-colour one is not recorded. Both replay correctly. The 13- and 14-colour bounds (365, 446) come from a beam search with 10^6 states per layer followed by re-solving the tail. For N = 15…24 the bounds come from a construction (complete the upper half of the colours
   greedily, pouring two half-emptied lanes together to free a lane), then either a beam search on the remaining half or a replay of a known
   solution for half as many colours on its top layer followed by beam search. The values for N ≥ 13 are rough.
 - **Growth.** T(N) = Θ(N²) follows from Szegedy and Yu (see Prior work). The constant is open:
