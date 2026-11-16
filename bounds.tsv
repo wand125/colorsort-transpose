@@ -4,7 +4,7 @@ N	lower	lower_basis	upper	upper_source	solution
 4	21	全探索で確定（BFS/IDA*）	21	全探索で確定	solutions/best.tsv
 5	36	全探索で確定（BFS/IDA*）	36	全探索で確定	solutions/best.tsv
 6	55	枝刈り全探索 prove 6 55（下界 J、471 万状態）で確定	55	自作: r1r2（確定）	solutions/best.tsv
-7	74	枝刈り全探索 prove 7 74（下界 J、4976 万状態）	78	自作: colorsort3 window=6	solutions/best.tsv
+7	75	枝刈り全探索 prove 7 75（下界 J、32947 万状態）	78	自作: colorsort3 window=6	solutions/best.tsv
 8	94	枝刈り全探索 prove 8 94（下界 J、485 万状態）	106	既知: Docs 付録 A（既知、未確定）	solutions/docs_known.tsv
 9	117	枝刈り全探索 prove 9 117（下界 J、179,334 状態）	141	自作: N9 w1000000 	solutions/best.tsv
 10	145	枝刈り全探索 prove 10 145（下界 J、1,115,978 状態）	180	自作: 解き直し（t=40、幅 3e5）	solutions/best.tsv
