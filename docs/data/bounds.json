@@ -109,13 +109,13 @@
  },
  {
   "N": 11,
-  "lower": 174,
+  "lower": 175,
   "upper": 229,
   "exact": false,
   "general": 174,
   "fit": 210,
-  "lower_en": "general bound (3N²−N−4)/2",
-  "lower_ja": "一般式 (3N²−N−4)/2",
+  "lower_en": "pruned search with the bound J",
+  "lower_ja": "下界 J を使った枝刈り全探索",
   "upper_en": "beam search",
   "upper_ja": "ビーム探索"
  },

@@ -32,7 +32,7 @@ so this is a "transposition" of N stacks using one spare stack.
 | 8 | 94 | 106 | open | 105 |
 | 9 | 117 | 141 | open | 136 |
 | 10 | 145 | 180 | open | 171 |
-| 11 | 174 | 229 | open | 210 |
+| 11 | 175 | 229 | open | 210 |
 | 12 | 208 | 272 | open | 253 |
 | 13 | 245 | 365 | open | 300 |
 | 14 | 285 | 459 | open | 351 |
@@ -77,7 +77,7 @@ The source of this table is [bounds.tsv](bounds.tsv). The last column is the qua
 
 Checked against exact distances: no violation on all 37.45 million states for N = 4. The mean gap between J and the true distance there is 0.92.
 With J, the search that proves T(6) ≥ 55 visits 4.7 million states; with h + D the search for T(6) ≥ 52 alone visited 325 million.
-The logs of the deciding runs are `results/logs/prove6J_55_final.log` (T(6) ≥ 55) `results/logs/prove7J_74.log` (T(7) ≥ 74), `results/logs/prove8J_94.log` (T(8) ≥ 94) , `results/logs/prove9J_117.log` (T(9) ≥ 117) and `results/logs/prove10J_145.log` (T(10) ≥ 145).
+The logs of the deciding runs are `results/logs/prove6J_55_final.log` (T(6) ≥ 55) `results/logs/prove7J_74.log` (T(7) ≥ 74), `results/logs/prove8J_94.log` (T(8) ≥ 94) , `results/logs/prove9J_117.log` (T(9) ≥ 117) `results/logs/prove10J_145.log` (T(10) ≥ 145) and `results/logs/prove11J_175.log` (T(11) ≥ 175).
 
 ## Verify
 
