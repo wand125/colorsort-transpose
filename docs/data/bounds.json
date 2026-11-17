@@ -206,14 +206,14 @@
  {
   "N": 19,
   "lower": 530,
-  "upper": 1004,
+  "upper": 998,
   "exact": false,
   "general": 530,
   "fit": 666,
   "lower_en": "general bound (3N²−N−4)/2",
   "lower_ja": "一般式 (3N²−N−4)/2",
-  "upper_en": "construction and beam search",
-  "upper_ja": "組み立てとビーム探索"
+  "upper_en": "beam search",
+  "upper_ja": "ビーム探索"
  },
  {
   "N": 20,
