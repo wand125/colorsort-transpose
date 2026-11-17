@@ -37,7 +37,7 @@ so this is a "transposition" of N stacks using one spare stack.
 | 13 | 245 | 329 | open | 300 |
 | 14 | 285 | 387 | open | 351 |
 | 15 | 328 | 483 | open | 406 |
-| 16 | 374 | 611 | open | 465 |
+| 16 | 374 | 562 | open | 465 |
 | 17 | 423 | 715 | open | 528 |
 | 18 | 475 | 863 | open | 595 |
 | 19 | 530 | 998 | open | 666 |
@@ -60,7 +60,7 @@ The source of this table is [bounds.tsv](bounds.tsv). The last column is the qua
   solutions are earlier recorded solutions that this project has not improved; the 12-colour one was found by a search over macro-moves,
   and the origin of the 8-colour one is not recorded. Both replay correctly. The 13- and 14-colour bounds (329, 387) come from the same pour-based beam search that found the 12-colour solution (widths 10^4 and 3·10^4; different random seeds for tie-breaking). For N = 15…24 the bounds come from a construction (complete the upper half of the colours
   greedily, pouring two half-emptied lanes together to free a lane), then either a beam search on the remaining half or a replay of a known
-  solution for half as many colours on its top layer followed by beam search. For N = 16 re-solving the tail with a beam of 10^6 states per layer shortened the constructed 646-move solution to 643, and joining this with SAT window re-solves (646 → 635) at the common position that minimises the total gives 632 (and long-window beam re-solves 613; the pour-based beam with width 10^4 gives 613 directly and 611 after window re-solves; for N = 17 the pour-based beam with width 2000 gives 715, shorter than the construction's 743, for N = 19 it gives 998 against 1004, and for N = 21 1302 against 1336), and for N = 15 checking every 12-move window with a SAT solver for a shorter equivalent sequence shortened 547 to 536; joined with a beam re-solve of the tail (547 → 543) this gives 532, and a further tail re-solve gives 531; the pour-based beam search (width 3·10^4) then gave 483 directly. The values for N ≥ 13 are rough.
+  solution for half as many colours on its top layer followed by beam search. For N = 16 re-solving the tail with a beam of 10^6 states per layer shortened the constructed 646-move solution to 643, and joining this with SAT window re-solves (646 → 635) at the common position that minimises the total gives 632 (and long-window beam re-solves 613; the pour-based beam with width 10^4 gives 613 directly and 611 after window re-solves, and with width 3·10^4 it gives 562; for N = 17 the pour-based beam with width 2000 gives 715, shorter than the construction's 743, for N = 19 it gives 998 against 1004, and for N = 21 1302 against 1336), and for N = 15 checking every 12-move window with a SAT solver for a shorter equivalent sequence shortened 547 to 536; joined with a beam re-solve of the tail (547 → 543) this gives 532, and a further tail re-solve gives 531; the pour-based beam search (width 3·10^4) then gave 483 directly. The values for N ≥ 13 are rough.
 - **Growth.** T(N) = Θ(N²) follows from Szegedy and Yu (see Prior work). The constant is open:
   the lower bound gives 1.5, and the fitted quadratic would give 2.
 
