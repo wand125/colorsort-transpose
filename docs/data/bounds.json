@@ -110,7 +110,7 @@
  {
   "N": 11,
   "lower": 175,
-  "upper": 229,
+  "upper": 225,
   "exact": false,
   "general": 174,
   "fit": 210,
@@ -254,7 +254,7 @@
  {
   "N": 23,
   "lower": 780,
-  "upper": 1599,
+  "upper": 1568,
   "exact": false,
   "general": 780,
   "fit": 990,

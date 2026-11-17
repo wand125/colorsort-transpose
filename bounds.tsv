@@ -8,7 +8,7 @@ N	lower	lower_basis	upper	upper_source	solution
 8	95	枝刈り全探索 prove 8 95（下界 J、5311 万状態）	106	既知: Docs 付録 A（既知、未確定）	solutions/docs_known.tsv
 9	117	枝刈り全探索 prove 9 117（下界 J、179,334 状態）	140	自作: 注ぎ単位のビーム（beamM）	solutions/best.tsv
 10	145	枝刈り全探索 prove 10 145（下界 J、1,115,978 状態）	179	自作: 注ぎ単位のビーム（beamM）	solutions/best.tsv
-11	175	枝刈り全探索 prove 11 175（下界 J、546,790 状態）	229	自作: 反復解き直し（幅 3e5）	solutions/best.tsv
+11	175	枝刈り全探索 prove 11 175（下界 J、546,790 状態）	225	自作: 注ぎ単位のビーム（pour.rs）	solutions/best.tsv
 12	208	h+D の一般式 (3N²−N−4)/2	272	既知: Docs 付録 A（Claude Fable、注ぎ単位のビーム 幅 2000）	solutions/docs_known.tsv
 13	245	h+D の一般式 (3N²−N−4)/2	329	自作: 注ぎ単位のビーム（beamM）	solutions/best.tsv
 14	285	h+D の一般式 (3N²−N−4)/2	387	自作: 注ぎ単位のビーム（beamM）	solutions/best.tsv
@@ -20,5 +20,5 @@ N	lower	lower_basis	upper	upper_source	solution
 20	588	h+D の一般式 (3N²−N−4)/2	1027	自作: 注ぎ単位のビーム（pour.rs）	solutions/best.tsv
 21	649	h+D の一般式 (3N²−N−4)/2	1129	自作: 注ぎ単位のビーム（pour.rs）	solutions/best.tsv
 22	713	h+D の一般式 (3N²−N−4)/2	1355	自作: 注ぎ単位のビーム（pour.rs）	solutions/best.tsv
-23	780	h+D の一般式 (3N²−N−4)/2	1599	自作: 注ぎ単位のビーム（pour.rs）	solutions/best.tsv
+23	780	h+D の一般式 (3N²−N−4)/2	1568	自作: 注ぎ単位のビーム（pour.rs）	solutions/best.tsv
 24	850	h+D の一般式 (3N²−N−4)/2	1672	自作: 注ぎ単位のビーム（pour.rs）	solutions/best.tsv
