@@ -13,7 +13,7 @@ N	lower	lower_basis	upper	upper_source	solution
 13	245	h+D の一般式 (3N²−N−4)/2	365	自作: 直接ビーム（幅 1e6）＋解き直し	solutions/best.tsv
 14	285	h+D の一般式 (3N²−N−4)/2	443	自作: 直接ビーム（幅 1e6）＋解き直し	solutions/best.tsv
 15	328	h+D の一般式 (3N²−N−4)/2	547	自作: 半分割りの組み立て＋ビーム	solutions/halving_13_24.tsv
-16	374	h+D の一般式 (3N²−N−4)/2	646	自作: 半分割り＋下半分を幅 2e5 で解き直し	solutions/recur.tsv
+16	374	h+D の一般式 (3N²−N−4)/2	645	自作: 半分割り＋下半分を幅 2e5 で解き直し、さらに後半を幅 1e6 で解き直し	solutions/best.tsv
 17	423	h+D の一般式 (3N²−N−4)/2	743	自作: 半分割り＋下半分を幅 2e5 で解き直し	solutions/recur.tsv
 18	475	h+D の一般式 (3N²−N−4)/2	863	自作: 半分割り＋下半分を幅 2e5 で解き直し	solutions/recur.tsv
 19	530	h+D の一般式 (3N²−N−4)/2	1004	自作: 半分割りの組み立て＋ビーム	solutions/halving_13_24.tsv
