@@ -1,0 +1,55 @@
+name: Accept puzzle submissions
+
+on:
+  push:
+    paths:
+      - 'records/submissions/**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: accept-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  accept:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Recheck submissions and publish generated files
+        env:
+          TARGET_BRANCH: ${{ github.ref_name }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3; do
+            python3 tools/accept_submissions.py
+            python3 tools/verify_all.py --readme
+            python3 tools/build_site.py
+            git add -- records/submissions bounds.tsv solutions/best.tsv README.md README.ja.md docs
+            if ! git diff --cached --quiet; then
+              git commit -m 'Accept and verify puzzle submissions'
+            fi
+            if git push origin "HEAD:refs/heads/$TARGET_BRANCH"; then
+              exit 0
+            fi
+            # Re-evaluate after a push race. Only this disposable Actions
+            # checkout resets if generated bounds conflict with upstream.
+            if ! git pull --rebase origin "$TARGET_BRANCH"; then
+              git rebase --abort
+              git fetch origin "$TARGET_BRANCH"
+              git reset --hard FETCH_HEAD
+            fi
+          done
+          echo 'Could not push after three attempts' >&2
+          exit 1

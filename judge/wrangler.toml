@@ -1,0 +1,22 @@
+name = "colorsort-judge"
+main = "src/index.ts"
+compatibility_date = "2026-11-17"
+# Browser functions are serialized; keep them free of bundle name helpers.
+keep_names = false
+
+[vars]
+REPO_OWNER = "wand125"
+REPO_NAME = "colorsort-transpose"
+BRANCH = "main"
+PUBLIC_SITE_URL = "https://wand125.github.io/colorsort-transpose/"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "colorsort-judge"
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[observability]
+enabled = true

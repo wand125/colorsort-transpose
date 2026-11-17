@@ -26,6 +26,11 @@ def lower_kind(n, lower, upper):
 
 
 def upper_kind(n, text):
+    # External submissions form the "submission" source kind.
+    if text.startswith("外部の提出: @"):
+        login = text.removeprefix("外部の提出: @")
+        if login and len(login) <= 39 and all(c in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-" for c in login):
+            return (f"submitted by @{login}", f"外部の提出: @{login}")
     if n <= 5:
         return ("optimal solution", "最短の手順")
     if "r1r2" in text:

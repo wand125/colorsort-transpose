@@ -1,0 +1,6 @@
+GITHUB_APP_ID=replace-me
+GITHUB_APP_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nreplace-with-PKCS8-key\n-----END PRIVATE KEY-----"
+GITHUB_CLIENT_ID=replace-me
+GITHUB_CLIENT_SECRET=replace-me
+GITHUB_INSTALLATION_ID=replace-me
+SESSION_SECRET=replace-with-at-least-32-random-bytes
