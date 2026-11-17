@@ -14,7 +14,7 @@ N	lower	lower_basis	upper	upper_source	solution
 14	285	h+D の一般式 (3N²−N−4)/2	392	自作: 注ぎ単位のビーム（beamM）	solutions/best.tsv
 15	328	h+D の一般式 (3N²−N−4)/2	501	自作: 注ぎ単位のビーム（beamM）	solutions/best.tsv
 16	374	h+D の一般式 (3N²−N−4)/2	611	自作: 注ぎ単位のビーム（beamM）＋区間のビームで解き直し	solutions/best.tsv
-17	423	h+D の一般式 (3N²−N−4)/2	743	自作: 半分割り＋下半分を幅 2e5 で解き直し	solutions/recur.tsv
+17	423	h+D の一般式 (3N²−N−4)/2	715	自作: 注ぎ単位のビーム（beamM）	solutions/best.tsv
 18	475	h+D の一般式 (3N²−N−4)/2	863	自作: 半分割り＋下半分を幅 2e5 で解き直し	solutions/recur.tsv
 19	530	h+D の一般式 (3N²−N−4)/2	1004	自作: 半分割りの組み立て＋ビーム	solutions/halving_13_24.tsv
 20	588	h+D の一般式 (3N²−N−4)/2	1157	自作: 半分割り＋下半分を幅 2e5 で解き直し	solutions/recur.tsv
