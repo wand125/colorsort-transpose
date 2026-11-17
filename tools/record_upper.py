@@ -2,7 +2,7 @@
 - 手順を replay で確かめる。
 - solutions/best.tsv の N 行の手数と手順、bounds.tsv の上界を置き換える。
 - README.md・docs/paper*.html の表の N 行の上界を置き換える。
-- 追加の OLD=NEW は、README.md・docs/paper*.html の本文の文字列置換（例: "gives 635=gives 633"）。
+- 追加の "OLD => NEW" は、README.md・docs/paper*.html の本文の文字列置換（例: "gives 635 => gives 633"）。
   どれも 1 か所以上当たらなければ止まる。
 そのあと verify_all.py --readme と build_site.py を回すこと。"""
 import sys
@@ -40,7 +40,8 @@ for i, l in enumerate(L):
         L[i] = "\t".join(f)
 bp.write_text("\n".join(L))
 
-pairs = [a.split("=", 1) for a in sys.argv[3:]]
+pairs = [a.split(" => ", 1) for a in sys.argv[3:]]
+assert all(len(p) == 2 for p in pairs), "置換は \"OLD => NEW\" の形で"
 for fn in ["README.md", "docs/paper.html", "docs/paper.ja.html"]:
     p = root / fn
     s = p.read_text()
