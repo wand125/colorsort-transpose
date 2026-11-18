@@ -12,10 +12,15 @@ sys.path.insert(0, str(Path(__file__).parent))
 import verify_all as v
 
 root = Path(__file__).resolve().parents[1]
+
 n = int(sys.argv[1])
 seq = Path(sys.argv[2]).read_text().split()[-1]
 new = len(seq) // 2
 assert v.replay(n, seq), "replay 失敗"
+pairs = [a.split(" => ", 1) for a in sys.argv[3:]]
+assert all(len(p) == 2 for p in pairs), "置換は \"OLD => NEW\" の形で"
+for a, _ in pairs:  # 書き換える前に、どの置換も当たることを確かめる
+    assert any(a in (root / fn).read_text() for fn in ["README.md", "docs/paper.html", "docs/paper.ja.html"]), f"当たらない: {a}"
 
 bt = root / "solutions/best.tsv"
 L = bt.read_text().split("\n")
@@ -40,8 +45,6 @@ for i, l in enumerate(L):
         L[i] = "\t".join(f)
 bp.write_text("\n".join(L))
 
-pairs = [a.split(" => ", 1) for a in sys.argv[3:]]
-assert all(len(p) == 2 for p in pairs), "置換は \"OLD => NEW\" の形で"
 for fn in ["README.md", "docs/paper.html", "docs/paper.ja.html"]:
     p = root / fn
     s = p.read_text()
