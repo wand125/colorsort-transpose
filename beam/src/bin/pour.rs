@@ -819,18 +819,126 @@ enum Lb {
     Hd,
     J,
 }
+#[derive(Clone)]
 struct Config {
     n: usize,
     width: usize,
     a: f64,
     b: f64,
     d: f64,
+    extra: ExtraWeights,
+    noise: f64,
     seed: u64,
     threads: usize,
     upper: usize,
     lb: Lb,
     eval_lb: bool,
     max_g: usize,
+}
+#[derive(Clone, Copy, Default)]
+struct ExtraWeights {
+    depth: f64,
+    empty: f64,
+    near: f64,
+    pairs: f64,
+}
+impl ExtraWeights {
+    fn active(self) -> bool {
+        self.depth != 0.0 || self.empty != 0.0 || self.near != 0.0 || self.pairs != 0.0
+    }
+    fn score(self, x: [i32; 4]) -> f64 {
+        self.depth * x[0] as f64
+            + self.empty * x[1] as f64
+            + self.near * x[2] as f64
+            + self.pairs * x[3] as f64
+    }
+}
+#[derive(Clone, Copy, Default)]
+struct EvalLane {
+    depth: i32,
+    empty: i32,
+    near: i32,
+    top: usize,
+    room: i32,
+}
+fn eval_lane(l: Lane, n: usize) -> EvalLane {
+    let h = height(l);
+    if h == 0 {
+        return EvalLane {
+            empty: 1,
+            ..EvalLane::default()
+        };
+    }
+    let mut counts = [0; MAXL];
+    let mut depth = 0;
+    for k in 0..h {
+        let c = ball(l, k) as usize;
+        // Each differently coloured pair contributes once to burial depth.
+        depth += k as i32 - counts[c];
+        counts[c] += 1;
+    }
+    let mut base = 1;
+    while base < h && ball(l, base) == ball(l, 0) {
+        base += 1;
+    }
+    EvalLane {
+        depth,
+        empty: 0,
+        near: (base < h && h - base <= 2) as i32,
+        top: ball(l, h - 1) as usize,
+        room: (h < n) as i32,
+    }
+}
+struct EvalInfo {
+    lanes: [EvalLane; MAXL],
+    totals: [i32; 4],
+    sources: [i32; MAXL],
+    targets: [i32; MAXL],
+}
+impl EvalInfo {
+    fn new(s: &[Lane], n: usize) -> Self {
+        let mut out = Self {
+            lanes: [EvalLane::default(); MAXL],
+            totals: [0; 4],
+            sources: [0; MAXL],
+            targets: [0; MAXL],
+        };
+        for (i, &l) in s.iter().enumerate() {
+            let x = eval_lane(l, n);
+            out.lanes[i] = x;
+            out.totals[0] += x.depth;
+            out.totals[1] += x.empty;
+            out.totals[2] += x.near;
+            if x.top != 0 {
+                out.sources[x.top] += 1;
+                out.targets[x.top] += x.room;
+            }
+        }
+        out.totals[3] = (1..=n).map(|c| (out.sources[c] - 1) * out.targets[c]).sum();
+        out
+    }
+    fn changed(&self, a: usize, b: usize, x: EvalLane, y: EvalLane) -> [i32; 4] {
+        let mut out = self.totals;
+        let mut sources = self.sources;
+        let mut targets = self.targets;
+        let mut colors = 0u32;
+        for (v, sign) in [(self.lanes[a], -1), (self.lanes[b], -1), (x, 1), (y, 1)] {
+            out[0] += sign * v.depth;
+            out[1] += sign * v.empty;
+            out[2] += sign * v.near;
+            if v.top != 0 {
+                sources[v.top] += sign;
+                targets[v.top] += sign * v.room;
+                colors |= 1 << v.top;
+            }
+        }
+        while colors != 0 {
+            let c = colors.trailing_zeros() as usize;
+            colors &= colors - 1;
+            out[3] += (sources[c] - 1) * targets[c] - (self.sources[c] - 1) * self.targets[c];
+        }
+        out
+    }
 }
 #[derive(Clone, Copy)]
 struct Node {
@@ -1009,6 +1117,7 @@ fn expand(s: &[Lane], id: u32, g: usize, seen: &Seen, c: &Config) -> Vec<Cand> {
     let n = c.n;
     let first = s.iter().position(|&l| l == 0);
     let info = BoardInfo::new(s, n);
+    let extra = c.extra.active().then(|| EvalInfo::new(s, n));
     for a in 0..=n {
         let ht = height(s[a]);
         if ht == 0 {
@@ -1082,7 +1191,7 @@ fn expand(s: &[Lane], id: u32, g: usize, seen: &Seen, c: &Config) -> Vec<Cand> {
                 if c.upper != usize::MAX && value > budget {
                     continue;
                 }
-                let f = if m == 0 {
+                let mut f = if m == 0 {
                     0.0
                 } else {
                     (if c.eval_lb { value } else { m }) as f64
@@ -1090,12 +1199,17 @@ fn expand(s: &[Lane], id: u32, g: usize, seen: &Seen, c: &Config) -> Vec<Cand> {
                         + c.b * spread as f64
                         + c.d * p as f64
                 };
+                if let Some(ref extra) = extra {
+                    f += c
+                        .extra
+                        .score(extra.changed(a, b, eval_lane(t[a], n), eval_lane(t[b], n)));
+                }
                 let noise = mix(c.seed
                     ^ ((id as u64) << 24)
                     ^ ((a as u64) << 16)
                     ^ ((b as u64) << 8)
                     ^ r as u64);
-                let jitter = ((noise >> 40) as f64 / ((1u64 << 24) as f64) * 0.02) as f32;
+                let jitter = ((noise >> 40) as f64 / ((1u64 << 24) as f64) * c.noise) as f32;
                 out.push(Cand {
                     hash: key,
                     parent: id,
@@ -1277,7 +1391,7 @@ fn search(c: &Config, start: State) -> Option<(usize, String)> {
 }
 fn main() {
     let args: Vec<_> = std::env::args().collect();
-    assert!(args.len()>=3,"pour N W [--a A --b B --d D --seed S --threads T --start LANES --upper U --lb m|hd|j --eval-lb]");
+    assert!(args.len()>=3,"pour N W [--a A --b B --d D --seed S --threads T --start LANES --upper U --lb m|hd|j --eval-lb --w-depth X --w-empty X --w-near X --w-pairs X --noise X]");
     let n = args[1].parse::<usize>().unwrap();
     let width = args[2].parse().unwrap();
     assert!((1..=24).contains(&n) && width > 0);
@@ -1287,6 +1401,8 @@ fn main() {
         a: 0.25,
         b: 0.5,
         d: 1.0,
+        extra: ExtraWeights::default(),
+        noise: 0.02,
         seed: 1,
         threads: 1,
         upper: usize::MAX,
@@ -1308,6 +1424,14 @@ fn main() {
             "--a" => c.a = v.parse().unwrap(),
             "--b" => c.b = v.parse().unwrap(),
             "--d" => c.d = v.parse().unwrap(),
+            "--w-t" => c.a = v.parse().unwrap(),
+            "--w-s" => c.b = v.parse().unwrap(),
+            "--w-p" => c.d = v.parse().unwrap(),
+            "--w-depth" => c.extra.depth = v.parse().unwrap(),
+            "--w-empty" => c.extra.empty = v.parse().unwrap(),
+            "--w-near" => c.extra.near = v.parse().unwrap(),
+            "--w-pairs" => c.extra.pairs = v.parse().unwrap(),
+            "--noise" => c.noise = v.parse().unwrap(),
             "--seed" => c.seed = v.parse().unwrap(),
             "--threads" => c.threads = v.parse().unwrap(),
             "--start" => st = Some(v.clone()),
@@ -1326,6 +1450,13 @@ fn main() {
         i += 2
     }
     assert!(c.threads > 0 && c.a.is_finite() && c.b.is_finite() && c.d.is_finite());
+    assert!(
+        c.noise.is_finite()
+            && c.noise >= 0.0
+            && [c.extra.depth, c.extra.empty, c.extra.near, c.extra.pairs]
+                .iter()
+                .all(|x| x.is_finite())
+    );
     let s = st.map_or_else(|| initial(n), |st| parse(n, &st));
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(c.threads)
@@ -1343,6 +1474,115 @@ fn main() {
 mod tests {
     use super::*;
     use std::collections::VecDeque;
+    // Deliberately quadratic reference, independent of EvalInfo's colour counts.
+    fn extra_reference(s: &[Lane], n: usize) -> [i32; 4] {
+        let mut out = [0; 4];
+        for (i, &l) in s.iter().enumerate() {
+            let h = height(l);
+            out[1] += (h == 0) as i32;
+            for k in 0..h {
+                for j in k + 1..h {
+                    out[0] += (ball(l, k) != ball(l, j)) as i32;
+                }
+            }
+            if h == 0 {
+                continue;
+            }
+            let base = (1..h).find(|&k| ball(l, k) != ball(l, 0)).unwrap_or(h);
+            out[2] += (base < h && h - base <= 2) as i32;
+            for (j, &other) in s.iter().enumerate() {
+                let oh = height(other);
+                if i != j && oh > 0 && oh < n && ball(l, h - 1) == ball(other, oh - 1) {
+                    out[3] += 1;
+                }
+            }
+        }
+        out
+    }
+    #[test]
+    fn extra_delta_matches_independent_reference() {
+        for n in 2..=24 {
+            let mut s = initial(n);
+            let mut rng = n as u64;
+            for _ in 0..800 {
+                let info = EvalInfo::new(&s[..=n], n);
+                assert_eq!(info.totals, extra_reference(&s[..=n], n));
+                rng = mix(rng + 1);
+                let a = rng as usize % (n + 1);
+                rng = mix(rng + 1);
+                let b = rng as usize % (n + 1);
+                if a == b || height(s[a]) == 0 || height(s[b]) == n {
+                    continue;
+                }
+                rng = mix(rng + 1);
+                let r = 1 + rng as usize % height(s[a]).min(n - height(s[b]));
+                let mut next = s;
+                apply(&mut next, a, b, r);
+                assert_eq!(
+                    info.changed(a, b, eval_lane(next[a], n), eval_lane(next[b], n)),
+                    extra_reference(&next[..=n], n)
+                );
+                s = next;
+            }
+        }
+    }
+    #[test]
+    fn extra_weights_apply_to_goal_candidates() {
+        let n = 3;
+        let s = parse(n, "1,11,222,333");
+        let c = Config {
+            n,
+            width: 10,
+            a: 0.25,
+            b: 0.5,
+            d: 1.0,
+            extra: ExtraWeights {
+                empty: -2.0,
+                ..ExtraWeights::default()
+            },
+            noise: 0.0,
+            seed: 1,
+            threads: 1,
+            upper: usize::MAX,
+            lb: Lb::M,
+            eval_lb: false,
+            max_g: 27,
+        };
+        let candidates = expand(&s[..=n], 0, 0, &Seen::default(), &c);
+        let goal = candidates
+            .iter()
+            .find(|x| x.a == 0 && x.b == 1 && x.r == 1)
+            .unwrap();
+        assert_eq!(goal.h, -2.0);
+    }
+    #[test]
+    fn defaults_match_pre_eval_golden_path() {
+        // Produced with the frozen, unmodified binary, N=6 W=100 seed=1.
+        let golden = "3060405020105412161315152121414121412424246212126162363132363643535363525653546565656565653636365343465645454643";
+        let c = Config {
+            n: 6,
+            width: 100,
+            a: 0.25,
+            b: 0.5,
+            d: 1.0,
+            extra: ExtraWeights::default(),
+            noise: 0.02,
+            seed: 1,
+            threads: 1,
+            upper: usize::MAX,
+            lb: Lb::M,
+            eval_lb: false,
+            max_g: 108,
+        };
+        for threads in [1, 4] {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .unwrap();
+            let result = pool.install(|| search(&c, initial(6))).unwrap();
+            assert_eq!(result, (56, golden.to_string()));
+        }
+    }
     fn canon(mut s: State, n: usize) -> State {
         s[..=n].sort_unstable();
         s
