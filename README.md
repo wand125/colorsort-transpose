@@ -39,7 +39,7 @@ so this is a "transposition" of N stacks using one spare stack.
 | 15 | 328 | 456 | open | 406 |
 | 16 | 374 | 525 | open | 465 |
 | 17 | 423 | 611 | open | 528 |
-| 18 | 475 | 715 | open | 595 |
+| 18 | 475 | 708 | open | 595 |
 | 19 | 530 | 790 | open | 666 |
 | 20 | 588 | 911 | open | 741 |
 | 21 | 649 | 1019 | open | 820 |
