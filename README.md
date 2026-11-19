@@ -120,6 +120,12 @@ COLORLB_JOINT=1 ./target/release/colorlb prove 6 55   # no solution with at most
 - T. Ito et al., "Sorting Balls and Water: Equivalence and Computational Complexity", FUN 2022 (arXiv:2202.09495), and related work
   study versions where a ball may only be placed on a ball of the same colour.
 
+- The same move rule appears in NOIP 2020 problem 移球游戏 (Luogu P7115: n+1 stacks of capacity m, at most 820,000 moves, no minimisation)
+  and in a 2020 Mathematics Stack Exchange question (question 3592393) asking for the minimum in general; ICPC 2026 Asia Japan online first round,
+  problem H, asks for the exact minimum with an unbounded side area. Althaus et al. (SoCS 2025) show NP-hardness of minimising moves for a variant
+  with coloured tubes; Geft (ESA 2026, arXiv:2606.06686) shows stack rearrangement NP-hard; the container pre-marshalling literature
+  (e.g. van Brink and van der Zwaan, arXiv:1406.7107) treats rearrangement into a fixed target layout. (2N−1)(N−1) is OEIS A014105(N−1).
+
 We did not find the general lower bound, T(6), or bounds for N ≥ 7 in the literature. Corrections are welcome.
 
 ## License

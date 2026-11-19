@@ -112,6 +112,8 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\
 <p>Szegedy と Yu [1] は、深さ \(d\) のスタック \(n\) 本に積まれた \(nd\) 個の品物を、空のスタック 1 本を使って並べ替える問題を扱っている。同じ種類の品物を区別しない版について、\(n\ge d\) のとき \(7nd(1+\log d)\) 手、\(d\le n^{m/2}\)（\(m\) は定数）のとき \(O(nd)\) 手のアルゴリズムを与えている。後者の定数は小さくない。下界は数え上げによる \(\Omega(nd)\) である。本稿の問題は、\(n=d=N\) で初期配置を 1 つに決めた場合に当たり、同論文の結果から \(T(N)=\Theta(N^2)\) が出る。Han・Stiffler・Bekris・Yu [2] は、それ以前にスタックの並べ替えのアルゴリズムと、小さい場合の最適解の計算を与えている。</p>
 <p>匿名のウェブページ [3] は、本稿と同じ初期配置を「行列の転置」として扱っている。幅優先探索と IDA* により \(T(2),\dots,T(5)=3,10,21,36\) を報告し、これらを通る 2 次式から \(T(N)=(2N-1)(N-1)\) を予想している。一般の \(N\) の下界や、\(N\ge6\) の値は与えていない。</p>
 <p>Ito ほか [4] とそれに続く研究は、玉（または水）を同じ色の上か空の容器にしか置けない版を扱っており、そこでは解けるかどうかの判定が NP 完全である。本稿の規則はこれと異なり、満杯でないレーンへの移動はすべて許され、解けることは常に明らかである。</p>
+<p>同じ移動の規則は、プログラミングコンテストにも現れる。NOIP 2020 の問題「移球游戏」[5] では、容量 \(m\) のスタックが \(n+1\) 本あり、そのうち \(n\) 本に \(n\) 色 \(m\) 個ずつの玉が満杯に入っている。一番上の玉を満杯でない任意のスタックへ移せて、各色を 1 本のスタックに集める。条件は \(n\le50\)、\(m\le400\) で、820,000 手以内の手順を答える。本稿の初期配置は \(n=m=N\) の場合に当たるが、この問題は上限以内の手順を求めるだけで、最少手数は求めない。Mathematics Stack Exchange の 2020 年の質問 [6] は、同じ規則で一般の配置から揃えるまでの最少手数を尋ねている。回答は状態のグラフの最短経路を示すだけで、値はない。2026 年の ICPC アジア地区日本国内予選の問題 H [7] は最少手数を厳密に求めるが、容量に上限のない置き場があり、そこから任意の玉を取り出せるので、別の問題である。</p>
+<p>Althaus ほか [8] は、玉を並べ替えるパズルに似た、ドイツのテレビ番組の遊び（色の付いた管と、色のない管 1 本）を扱っている。手数の最小化がフィードバック辺集合問題からの帰着で NP 困難であることを示し、小さいフィードバック辺集合の例から作る下界で幅優先探索を速めている。Geft [9] は、スタックの並べ替えが NP 困難であることを示した。コンテナ物流の pre-marshalling 問題は、置き場のコンテナを望む配置に積み替える問題で、van Brink と van der Zwaan [10] は目標の配置を 1 つに決めた版（configuration stacking）を扱っている。これらはどれも、本稿の初期配置での値を与えていない。予想の値 \((2N-1)(N-1)\) は OEIS A014105 [11] の \(a(N-1)\) だが、同項目にこのパズルへの言及はない。</p>
 </section>
 
 <section id="prelim" class="prose">
@@ -212,6 +214,13 @@ window.MathJax = { tex: { inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\
   <li>S. D. Han, N. M. Stiffler, K. E. Bekris and J. Yu, Efficient, high-quality stack rearrangement, <em>IEEE Robotics and Automation Letters</em> 3 (2018), 1608–1615.</li>
   <li>Anonymous, web page on matrix transposition with piles, https://piles-five.vercel.app/（2026 年 11 月閲覧）.</li>
   <li>T. Ito et al., Sorting balls and water: equivalence and computational complexity, <em>FUN 2022</em>; arXiv:2202.09495.</li>
+  <li>CCF, NOIP 2020, 移球游戏 (moving balls); Luogu P7115, https://www.luogu.com.cn/problem/P7115.</li>
+  <li>Tristen, How can I calculate the minimum number of moves needed in a game involving stacks?, Mathematics Stack Exchange question 3592393 (2020).</li>
+  <li>ICPC Asia Japan Online First-Round Contest 2026, Problem H, 浮き輪の色分け, https://storage.googleapis.com/files.icpc.jp/domestic2026/problems_ja.pdf.</li>
+  <li>E. Althaus, M. Blumenstock, N. Rassau, F. M. Schuhknecht and A. Q. Zimdars, Sorting colored balls in colored tubes, <em>Proc. SoCS</em> 18 (2025), 11–19.</li>
+  <li>T. Geft, Hardness of multi-agent path finding on trees: a unified approach, <em>ESA 2026</em>; arXiv:2606.06686.</li>
+  <li>M. van Brink and R. van der Zwaan, A branch and price procedure for the container premarshalling problem (2014); arXiv:1406.7107.</li>
+  <li>OEIS Foundation, Sequence A014105 (second hexagonal numbers), https://oeis.org/A014105.</li>
 </ol>
 </section>
 
