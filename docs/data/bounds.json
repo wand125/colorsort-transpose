@@ -122,14 +122,14 @@
  {
   "N": 12,
   "lower": 208,
-  "upper": 272,
+  "upper": 270,
   "exact": false,
   "general": 208,
   "fit": 253,
   "lower_en": "general bound (3N²−N−4)/2",
   "lower_ja": "一般式 (3N²−N−4)/2",
-  "upper_en": "earlier recorded solution",
-  "upper_ja": "以前から記録されていた手順"
+  "upper_en": "beam search",
+  "upper_ja": "ビーム探索"
  },
  {
   "N": 13,

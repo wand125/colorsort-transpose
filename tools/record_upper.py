@@ -23,27 +23,31 @@ for a, _ in pairs:  # 書き換える前に、どの置換も当たることを�
     assert any(a in (root / fn).read_text() for fn in ["README.md", "docs/paper.html", "docs/paper.ja.html"]), f"当たらない: {a}"
 
 bt = root / "solutions/best.tsv"
+bp = root / "bounds.tsv"
+# 今の上界は bounds.tsv の値（best.tsv の行は記録でない手順のこともある。例: 8・12 色は docs_known.tsv が記録）。
+# どちらも書き換える前に確かめる。
+BL = bp.read_text().split("\n")
+old = next((int(l.split("\t")[3]) for l in BL if l.split("\t")[0] == str(n)), None)
+assert old is not None and new < old, (old, new)
 L = bt.read_text().split("\n")
-old = None
+hit = False
 for i, l in enumerate(L):
     f = l.split("\t")
     if f[0] == str(n):
-        old = int(f[1])
         f[1] = str(new)
         f = [seq if len(x) > 200 else x for x in f]
         L[i] = "\t".join(f)
-assert old is not None and new < old, (old, new)
+        hit = True
+assert hit, "best.tsv に N の行がない"
 bt.write_text("\n".join(L))
-
-bp = root / "bounds.tsv"
-L = bp.read_text().split("\n")
-for i, l in enumerate(L):
+for i, l in enumerate(BL):
     f = l.split("\t")
     if f[0] == str(n):
-        assert f[3] == str(old)
         f[3] = str(new)
-        L[i] = "\t".join(f)
-bp.write_text("\n".join(L))
+        if len(f) > 5 and f[5] != "solutions/best.tsv":
+            f[5] = "solutions/best.tsv"
+        BL[i] = "\t".join(f)
+bp.write_text("\n".join(BL))
 
 for fn in ["README.md", "docs/paper.html", "docs/paper.ja.html"]:
     p = root / fn
