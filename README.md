@@ -53,7 +53,7 @@ The source of this table is [bounds.tsv](bounds.tsv). The last column is the qua
 - **Exact values.** T(2..6) = 3, 10, 21, 36, 55. The values for N ≤ 5 were known from exhaustive search (see Prior work).
   T(6) = 55 is established here: a 55-move solution exists, and a pruned breadth-first search with an admissible
   lower bound shows that no solution of 54 moves or fewer exists (4.7 million states).
-- **Seven to ten colours.** 75 ≤ T(7) ≤ 78, 95 ≤ T(8) ≤ 106, 117 ≤ T(9) ≤ 140 and 145 ≤ T(10) ≤ 177; the lower bounds come from the same pruned search, and the upper bounds are explicit solutions.
+- **Seven to ten colours.** 75 ≤ T(7) ≤ 78, 95 ≤ T(8) ≤ 106, 117 ≤ T(9) ≤ 139 and 145 ≤ T(10) ≤ 177; the lower bounds come from the same pruned search, and the upper bounds are explicit solutions.
 - **General lower bound.** T(N) ≥ (3N² − N − 4)/2 for all N.
 - **Upper bounds.** Every upper bound in the table comes with an explicit move sequence in [solutions/](solutions/).
   For N = 9, 10, 11 they come from beam search followed by re-optimisation of solution tails. The 8-colour solution (106) is an earlier recorded
