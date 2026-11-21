@@ -844,10 +844,10 @@ fn jle_cached(s: &State, n: usize, thr: u32) -> bool {
         r <= thr
     })
 }
-/// 形ごとの記録を全スレッドで共有する版（COLORLB_SHARED=1）。鍵の散らし値で 256 に分けた錠つきの表。
+/// 形ごとの記録を全スレッドで共有する（既定。COLORLB_NOSHARED を置くとスレッドごとの記録に戻す）。鍵の散らし値で 256 に分けた錠つきの表。
 fn use_shared() -> bool {
     static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *V.get_or_init(|| std::env::var("COLORLB_SHARED").map(|v| v == "1").unwrap_or(false))
+    *V.get_or_init(|| std::env::var("COLORLB_NOSHARED").is_err() && std::env::var("COLORLB_SHARED").map(|v| v != "0").unwrap_or(true))
 }
 fn jle_shared(s: &State, n: usize, thr: u32) -> bool {
     use std::sync::Mutex;
