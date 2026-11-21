@@ -419,7 +419,9 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
             }
         }
         // 残りのレーンの静的な下限: 残せるなら「残す」の動く数、残せないなら全部
-        let lbi = |i: usize| -> u32 { if its[i].5 { its[i].1 as u32 } else { its[i].3 as u32 } };
+        // 底の色の家がもう開いているレーンは「残す」ができないので、下限は全部出す数にする（o が増えるほど大きくなるだけなので、親の側の見積もりも下限のまま）
+        let hb = use_hb();
+        let lbi = |i: usize| -> u32 { if its[i].5 && (!hb || o >> its[i].0 & 1 == 0) { its[i].1 as u32 } else { its[i].3 as u32 } };
         let mut h = 0u32;
         // 次に片付けるレーンは、静的な下限に加えて「家の開いていない色の玉」の分も払う（開ける色はそのレーン自身が払ったあとに開く）。
         // 残りのレーンのうち、その余分が一番小さいものを足しても下限のまま。
@@ -427,7 +429,7 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
         // 開いていない色の個数の多い順に p 色ぶんを引いた値以上。各 p で余分の下限が最小のレーンを取って足しても下限のまま
         // （どの並べ方でも、p 番目のレーンの余分はその最小以上）。
         // レーンの形 i と o だけで決まる値（cp[q]・全部出す費用 xf・残す費用 xk）は、o ごとに 1 回だけ作って覚える（呼び出しの中で使い回す）。
-        const CW: usize = 18;
+        const CW: usize = 34;
         let cb = o as usize * d * CW;
         if memo.cps[o as usize] != memo.cep {
             for i in 0..d {
@@ -452,6 +454,10 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
                     let mut v = xf - pf[q];
                     if kp { v = v.min(xk - pk[q]); }
                     row[q] = v.saturating_sub(li);
+                    // 動く数を除いた余分だけ（同じ底の色のレーンは 1 本しか残せないことを使う下限用）
+                    let mut x = xf - nf as u32 - pf[q];
+                    if kp { x = x.min(xk - nk as u32 - pk[q]); }
+                    row[18 + q] = x;
                 }
                 row[16] = xf;
                 row[17] = xk;
@@ -479,7 +485,30 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
                 add += m;
             }
         }
-        let h_dyn = h + add;
+        let mut h_dyn = h + add;
+        if hb {
+            // 同じ底の色 c（家が開いていない）のレーンのうち「残す」ができるのは 1 本だけ（残すと c の家が開く）。
+            // 動く数の和は「全部出す数の和 − 色ごとに一番大きい節約（全部 − 残す）」以上。
+            // 余分（家の開いていない色の玉）は、動く数と別に、各順番 q で余分の下限が最小のレーンを足す。
+            let mut s2 = 0u32;
+            let mut sav = [0u32; 16];
+            for g in 0..ng {
+                let i = live[g];
+                let left = (gr.gc[i] - (code >> gr.sh[i] & gr.mk[i])) as u32;
+                s2 += left * its[i].3 as u32;
+                if its[i].5 && o >> its[i].0 & 1 == 0 { let c0 = its[i].0 as usize; sav[c0] = sav[c0].max((its[i].3 - its[i].1) as u32); }
+            }
+            for c in 1..=n { s2 -= sav[c]; }
+            let mut add2 = 0u32;
+            for q in 0..r {
+                let qq = q.min(n.min(14));
+                let mut m = u32::MAX;
+                for g in 0..ng { m = m.min(memo.cpc[cb + live[g] * CW + 18 + qq]); }
+                if m == 0 { break; }
+                add2 += m;
+            }
+            h_dyn = h_dyn.max(s2 + add2);
+        }
         let mut best = h_dyn.max(stored);
         if best > budget {
             memo.stamp[key] = memo.ep << 8 | best.min(254);
@@ -613,7 +642,7 @@ fn jlb_thr(s: &State, n: usize, thr: u32) -> u32 {
             if *epoch >= 1 << 24 { stamp.iter_mut().for_each(|x| *x = 0); *epoch = 1; }
             let no = 1usize << (n + 1);
             if cps.len() < no { cps.resize(no, 0); }
-            if cpc.len() < no * its.len() * 18 { cpc.resize(no * its.len() * 18, 0); }
+            if cpc.len() < no * its.len() * 34 { cpc.resize(no * its.len() * 34, 0); }
             *cep = cep.wrapping_add(1);
             if *cep == 0 { cps.iter_mut().for_each(|x| *x = 0); *cep = 1; }
             let mut memo = Memo { stamp: &mut *stamp, val: &mut *val, ep: *epoch, tt: &mut *ttg, ttmask, ttmin, nodes: 0, cps: &mut *cps, cpc: &mut *cpc, cep: *cep };
@@ -981,6 +1010,11 @@ fn late_dprime() -> bool {
 fn use_dom() -> bool {
     static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *V.get_or_init(|| std::env::var("COLORLB_NODOM").is_err())
+}
+/// J の内側の下限を強める（LOWER_BOUND_PROOF.md の 10 番）。COLORLB_NOHB で切る（比べる用）。
+fn use_hb() -> bool {
+    static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *F.get_or_init(|| std::env::var("COLORLB_NOHB").is_err())
 }
 fn use_hdyn() -> bool {
     static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
