@@ -45,7 +45,7 @@ so this is a "transposition" of N stacks using one spare stack.
 | 21 | 649 | 1019 | open | 820 |
 | 22 | 713 | 1113 | open | 903 |
 | 23 | 780 | 1265 | open | 990 |
-| 24 | 850 | 1420 | open | 1081 |
+| 24 | 850 | 1413 | open | 1081 |
 <!-- bounds:end -->
 
 The source of this table is [bounds.tsv](bounds.tsv). The last column is the quadratic that fits the exact values; it is a guide, not a claim.
