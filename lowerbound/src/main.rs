@@ -13,6 +13,7 @@
 //!   colorlb check N            N≤4: 全状態の正確な距離と比べる
 //!   colorlb near N DEPTH       完成形から DEPTH 手以内の状態で比べる
 //!   colorlb prove N B          g + h + D ≤ B−1 の状態だけを幅優先でたどり、B−1 手以内の解が無いか調べる
+//!   colorlb j1file N FILE       compare J and J1 with Python per-line references
 //!   colorlb init N             初期状態の h と D
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
@@ -809,6 +810,478 @@ fn jlb_ref(s: &State, n: usize) -> u32 {
         best
     })
 }
+/// J1 keeps lane order: unlike J's shape key, top-to-bottom order affects pen.
+#[derive(Default)]
+struct J1Memo {
+    stamp: Vec<u32>,
+    lo: Vec<u16>,
+    hi: Vec<u16>,
+    epoch: u32,
+}
+impl J1Memo {
+    fn reset(&mut self, size: usize) {
+        if self.stamp.len() < size {
+            self.stamp.resize(size, 0);
+            self.lo.resize(size, 0);
+            self.hi.resize(size, u16::MAX);
+        }
+        self.epoch = self.epoch.wrapping_add(1);
+        if self.epoch == 0 { self.stamp.fill(0); self.epoch = 1; }
+    }
+    fn bounds(&self, key: usize) -> (u32, u32) {
+        if self.stamp[key] == self.epoch {
+            (self.lo[key] as u32, self.hi[key] as u32)
+        } else { (0, u32::MAX) }
+    }
+    fn record(&mut self, key: usize, budget: u32, pass: bool) {
+        if self.stamp[key] != self.epoch {
+            self.stamp[key] = self.epoch;
+            self.lo[key] = 0;
+            self.hi[key] = u16::MAX;
+        }
+        if pass { self.hi[key] = self.hi[key].min(budget as u16); }
+        else { self.lo[key] = self.lo[key].max((budget + 1) as u16); }
+    }
+}
+struct J1Lane {
+    lane: Lane,
+    c0: u32,
+    run: usize,
+    dirty: bool,
+    // [full, keep], indexed by the open colour set (colour c uses bit c-1).
+    costs: Vec<[u8; 2]>,
+    // [open set][prior openings]: bounds above static movement, and above
+    // actual movement, respectively. The latter permits grouping bottom runs.
+    relax: Vec<[[u8; 2]; MAXL]>,
+}
+struct J1Problem {
+    n: usize,
+    lanes: Vec<J1Lane>,
+    full: usize,
+    size: usize,
+}
+impl J1Problem {
+    // Lower bounds allow at most q new colours before position q. Keeping a
+    // bottom run can save it only once per colour, even across duplicate lanes.
+    fn lower(&self, mask: usize, o: u32) -> u32 {
+        let mut movement = 0;
+        let mut full = 0;
+        let mut savings = [0u32; 16];
+        let mut rows = [u32::MAX; MAXL];
+        let mut extras = [u32::MAX; MAXL];
+        let left = (self.full ^ mask).count_ones() as usize;
+        if left == 0 { return 0; }
+        for (i, l) in self.lanes.iter().enumerate() {
+            if mask >> i & 1 != 0 { continue; }
+            let h = height(l.lane) as u32;
+            let keep = l.dirty && o & l.c0 == 0;
+            let m = h - if keep { l.run as u32 } else { 0 };
+            movement += m;
+            full += h;
+            if keep {
+                let c = l.c0.trailing_zeros() as usize;
+                savings[c] = savings[c].max(l.run as u32);
+            }
+            for q in 0..left {
+                let r = l.relax[o as usize][q];
+                rows[q] = rows[q].min(r[0] as u32);
+                extras[q] = extras[q].min(r[1] as u32);
+            }
+        }
+        (movement + rows[..left].iter().sum::<u32>())
+            .max(full - savings.iter().sum::<u32>() + extras[..left].iter().sum::<u32>())
+    }
+
+    // J suffix bounds are shared across every home/first-action choice. No
+    // synthetic puzzle state is needed: mask and o describe the suffix itself.
+    fn go(&self, mask: usize, o: u32, budget: u32, memo: &mut J1Memo) -> bool {
+        if mask == self.full { return true; }
+        if j1_tick() { return true; }
+        let key = (mask << self.n) | o as usize;
+        let (lo, hi) = memo.bounds(key);
+        if hi <= budget { return true; }
+        if lo > budget { return false; }
+        let lower = self.lower(mask, o);
+        if lower > budget {
+            memo.record(key, lower - 1, false); return false;
+        }
+        let mut opts = [(0u32, 0usize, 0u32); MAXL * 14];
+        let mut count = 0;
+        for (i, l) in self.lanes.iter().enumerate() {
+            if mask >> i & 1 != 0 { continue; }
+            // Equal complete lanes are interchangeable, including their top
+            // order. This symmetry is also valid for the temp-subset DP.
+            if (0..i).any(|j| mask >> j & 1 == 0 && self.lanes[j].lane == l.lane) { continue; }
+            let nm = mask | 1 << i;
+            if l.dirty && o & l.c0 == 0 {
+                opts[count] = (l.costs[o as usize][1] as u32, nm, o | l.c0); count += 1;
+            }
+            let cost = l.costs[o as usize][0] as u32;
+            let mut rest = ((1u32 << self.n) - 1) & !o;
+            loop {
+                let bit = rest & rest.wrapping_neg();
+                opts[count] = (cost, nm, o | bit); count += 1;
+                if rest == 0 { break; }
+                rest &= rest - 1;
+            }
+        }
+        opts[..count].sort_unstable_by_key(|&(cost, _, _)| cost);
+        for &(cost, nm, no) in &opts[..count] {
+            if cost <= budget && self.go(nm, no, budget - cost, memo) {
+                memo.record(key, budget, true); return true;
+            }
+        }
+        memo.record(key, budget, false);
+        false
+    }
+}
+
+#[derive(Default)]
+struct J1SubsetMemo {
+    dense: J1Memo,
+    sparse: HashMap<usize, (u32, u32)>,
+    is_dense: bool,
+}
+impl J1SubsetMemo {
+    fn reset(&mut self, size: usize) {
+        // Bound scratch memory for larger N; dense epochs avoid clearing the
+        // usual N<=7 tables between first actions and successive puzzle states.
+        self.is_dense = size <= 1 << 22;
+        if self.is_dense { self.dense.reset(size); }
+        self.sparse.clear();
+    }
+    fn bounds(&self, key: usize) -> (u32, u32) {
+        if self.is_dense { self.dense.bounds(key) }
+        else { self.sparse.get(&key).copied().unwrap_or((0, u32::MAX)) }
+    }
+    fn record(&mut self, key: usize, budget: u32, pass: bool) {
+        if self.is_dense { self.dense.record(key, budget, pass); }
+        else {
+            let v = self.sparse.entry(key).or_insert((0, u32::MAX));
+            if pass { v.1 = v.1.min(budget); } else { v.0 = v.0.max(budget + 1); }
+        }
+    }
+}
+struct J1Assignment<'a> {
+    problem: &'a J1Problem,
+    // Bit positions retain top-down order for the first-use home penalty.
+    temps: &'a [u8],
+    end: Vec<u32>,
+    closed: Vec<usize>,
+    o0: u32,
+    base: &'a mut J1Memo,
+    memo: &'a mut J1SubsetMemo,
+}
+impl J1Assignment<'_> {
+    fn end_cost(temps: &[u8], below: &[[u8; 16]], homes: &[(u8, usize)], buffer: usize) -> Vec<u32> {
+        let size = 1usize << temps.len();
+        let mut end: Vec<u32> = (0..size).map(|r| (r.count_ones() as usize).saturating_sub(buffer) as u32).collect();
+        for &(c, cap) in homes {
+            let old = end.clone();
+            for (r, value) in end.iter_mut().enumerate().skip(1) {
+                let mut sub = r;
+                while sub != 0 {
+                    if sub.count_ones() as usize <= cap {
+                        // First temp on this home is the highest selected one.
+                        *value = (*value).min(old[r ^ sub] + below[sub.trailing_zeros() as usize][c as usize] as u32);
+                    }
+                    sub = (sub - 1) & r;
+                }
+            }
+        }
+        end
+    }
+
+    fn go(&mut self, mask: usize, o: u32, r: usize, budget: u32) -> bool {
+        if mask == self.problem.full { return self.end[r] <= budget; }
+        if j1_tick() { return true; }
+        let key = (((mask << self.problem.n) | o as usize) << self.temps.len()) | r;
+        let (lo, hi) = self.memo.bounds(key);
+        if hi <= budget { return true; }
+        if lo > budget { return false; }
+        if !self.problem.go(mask, o, budget, self.base) {
+            self.memo.record(key, budget, false); return false;
+        }
+        let base_key = (mask << self.problem.n) | o as usize;
+        // A witnessed J suffix plus a complete end assignment is a J1 plan.
+        if self.base.bounds(base_key).1.saturating_add(self.end[r]) <= budget { return true; }
+        if self.end[r] <= budget && self.problem.go(mask, o, budget - self.end[r], self.base) { return true; }
+        let closed = r & self.closed[o as usize];
+        for i in 0..self.problem.lanes.len() {
+            if mask >> i & 1 != 0 { continue; }
+            let l = &self.problem.lanes[i];
+            if (0..i).any(|j| mask >> j & 1 == 0 && self.problem.lanes[j].lane == l.lane) { continue; }
+            let h = height(l.lane);
+            let mut displacement = [0u32; MAXL + 1];
+            for count in 1..=self.temps.len() {
+                let need = count.saturating_sub(self.problem.n - h);
+                displacement[count] = if need == 0 { 0 } else {
+                    displacement[count - 1] + ((o & !self.o0 & (1 << (ball(l.lane, h - need) - 1)) != 0) as u32)
+                };
+            }
+            let nm = mask | 1 << i;
+            // Try free placements first, then all other subsets. No dominance
+            // discards temp positions: those positions still affect end[r].
+            // A closed temp (colour not yet open) costs 1 here and uses space;
+            // leaving it to the end costs at most 1 (free) and never more.
+            let avail = r & !closed;
+            for charged in [false, true] {
+                let mut sub = avail;
+                loop {
+                    let count = sub.count_ones() as usize;
+                    let pen = (sub & closed).count_ones() + displacement[count];
+                    if (pen != 0) == charged {
+                        let cost = l.costs[o as usize][1] as u32 + pen;
+                        if l.dirty && o & l.c0 == 0 && cost <= budget && self.go(nm, o | l.c0, r ^ sub, budget - cost) {
+                            self.memo.record(key, budget, true); return true;
+                        }
+                        let cost = l.costs[o as usize][0] as u32 + pen;
+                        if cost <= budget {
+                            let mut rest = ((1u32 << self.problem.n) - 1) & !o;
+                            loop {
+                                let bit = rest & rest.wrapping_neg();
+                                if self.go(nm, o | bit, r ^ sub, budget - cost) {
+                                    self.memo.record(key, budget, true); return true;
+                                }
+                                if rest == 0 { break; }
+                                rest &= rest - 1;
+                            }
+                        }
+                    }
+                    if sub == 0 { break; }
+                    sub = (sub - 1) & avail;
+                }
+            }
+        }
+        self.memo.record(key, budget, false);
+        false
+    }
+}
+
+/// Exactly jfirst.J1 <= thr. No J dominance rules are applied to home choices
+/// or the first action: those choices also determine the temporary slots.
+// J1 の 1 回の計算の節点の上限（COLORLB_J1NODES、0 で無制限）。超えたら「落とせない」として通す（通すのは常に安全）。
+thread_local! { static J1CNT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) }; }
+static J1ABORT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+fn j1_cap() -> u64 {
+    static V: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("COLORLB_J1NODES").ok().and_then(|v| v.parse().ok()).unwrap_or(0))
+}
+#[inline]
+fn j1_tick() -> bool {
+    let cap = j1_cap();
+    if cap == 0 { if j1_stat() { J1CNT.with(|c| c.set(c.get() + 1)); } return false; }
+    J1CNT.with(|c| { let v = c.get() + 1; c.set(v); v > cap })
+}
+fn j1_stat() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("COLORLB_J1STAT").is_ok())
+}
+fn j1_le(s: &State, n: usize, thr: u32) -> bool {
+    J1CNT.with(|c| c.set(0));
+    let t0 = if j1_stat() { Some(std::time::Instant::now()) } else { None };
+    let r = j1_le_inner(s, n, thr);
+    if let Some(t0) = t0 {
+        let us = t0.elapsed().as_micros();
+        eprintln!("J1STAT {} {} {} {} {} {}", thr, r as u8, J1CNT.with(|c| c.get()), us, jlb(s, n), show(s, n));
+    }
+    if j1_cap() > 0 && J1CNT.with(|c| c.get()) > j1_cap() { J1ABORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed); return true; }
+    r
+}
+fn j1_le_inner(s: &State, n: usize, thr: u32) -> bool {
+    // Moving every ball in full plans costs at most 2*n*(n+1), and free
+    // placements add at most n. Keep budgets small for the u16 memo bounds.
+    if thr >= (2 * n * (n + 1) + n) as u32 { return true; }
+    let mut lanes = Vec::new();
+    let mut uni = Vec::new();
+    let mut empties = 0;
+    for &lane in &s[..=n] {
+        let ht = height(lane);
+        if ht == 0 { empties += 1; continue; }
+        let c0 = ball(lane, 0);
+        let mut run = 1;
+        while run < ht && ball(lane, run) == c0 { run += 1; }
+        let dirty = run != ht;
+        if !dirty { uni.push(lanes.len()); }
+        let mut costs = vec![[0; 2]; 1 << n];
+        for (o, cost) in costs.iter_mut().enumerate() {
+            for p in 0..ht {
+                let add = 1 + ((o >> (ball(lane, p) - 1) & 1 == 0) as u8);
+                cost[0] += add;
+                if p >= run { cost[1] += add; }
+            }
+        }
+        let mut relax = vec![[[0; 2]; MAXL]; 1 << n];
+        for o in 0..1usize << n {
+            let cankeep = dirty && o >> (c0 - 1) & 1 == 0;
+            let movement = ht - if cankeep { run } else { 0 };
+            let mut full = [0u8; 16];
+            let mut keep = [0u8; 16];
+            for p in 0..ht {
+                let c = ball(lane, p) as usize - 1;
+                if o >> c & 1 == 0 {
+                    full[c] += 1;
+                    if p >= run && c != c0 as usize - 1 { keep[c] += 1; }
+                }
+            }
+            full.sort_unstable_by(|a, b| b.cmp(a));
+            keep.sort_unstable_by(|a, b| b.cmp(a));
+            let (mut sf, mut sk) = (0, 0);
+            for q in 0..MAXL {
+                let fc = costs[o][0] - sf;
+                let kc = costs[o][1] - sk;
+                relax[o][q] = [(if cankeep { fc.min(kc) } else { fc }) - movement as u8,
+                    if cankeep { (fc - ht as u8).min(kc - (ht - run) as u8) } else { fc - ht as u8 }];
+                sf += full[q]; sk += keep[q];
+            }
+        }
+        lanes.push(J1Lane { lane, c0: 1 << (c0 - 1), run, dirty, costs, relax });
+    }
+    let full = (1 << lanes.len()) - 1;
+    let problem = J1Problem { n, lanes, full, size: (full + 1) << n };
+    thread_local! {
+        static J1BUF: std::cell::RefCell<(J1Memo, J1SubsetMemo)> = Default::default();
+    }
+    J1BUF.with(|cell| {
+        let mut guard = cell.borrow_mut();
+        let (base, memo) = &mut *guard;
+        base.reset(problem.size);
+        let colors = (1u32 << n) - 1;
+        for kept in 0usize..1 << uni.len() {
+            let mut mask = 0;
+            let mut o_kept = 0;
+            let mut homes_kept = Vec::new();
+            let mut valid = true;
+            for (u, &j) in uni.iter().enumerate() {
+                if kept >> u & 1 == 0 { continue; }
+                let l = &problem.lanes[j];
+                if o_kept & l.c0 != 0 { valid = false; break; }
+                mask |= 1 << j;
+                o_kept |= l.c0;
+                if height(l.lane) < n { homes_kept.push((ball(l.lane, 0) - 1, n - height(l.lane))); }
+            }
+            if !valid { continue; }
+            if mask == full { return true; }
+            let free = colors & !o_kept;
+            let mut sub = free;
+            loop {
+                let k = sub.count_ones() as usize;
+                if k <= empties {
+                    let o0 = o_kept | sub;
+                    if problem.go(mask, o0, thr, base) {
+                        let buffer = n * (empties - k);
+                        let mut homes = homes_kept.clone();
+                        for c in 0..n { if sub >> c & 1 != 0 { homes.push((c as u8, n)); } }
+                        for (first, l) in problem.lanes.iter().enumerate() {
+                            if mask >> first & 1 != 0 { continue; }
+                            if (0..first).any(|j| mask >> j & 1 == 0 && problem.lanes[j].lane == l.lane) { continue; }
+                            for keep in [true, false] {
+                                if keep && (!l.dirty || o0 & l.c0 != 0) { continue; }
+                                let cost = l.costs[o0 as usize][keep as usize] as u32;
+                                if cost > thr { continue; }
+                                let budget = thr - cost;
+                                let nm = mask | 1 << first;
+                                let mut temps = Vec::new();
+                                let mut below = Vec::new();
+                                let mut counts = [0u8; 16];
+                                for p in (if keep { l.run } else { 0 })..height(l.lane) {
+                                    let c = ball(l.lane, p) - 1;
+                                    if o0 >> c & 1 != 0 { counts[c as usize] += 1; }
+                                    else { temps.push(c); below.push(counts); }
+                                }
+                                temps.reverse(); below.reverse();
+                                let end = J1Assignment::end_cost(&temps, &below, &homes, buffer);
+                                let mut closed = vec![0; 1 << n];
+                                for (o, xs) in closed.iter_mut().enumerate() {
+                                    for (i, &c) in temps.iter().enumerate() { if o >> c & 1 == 0 { *xs |= 1 << i; } }
+                                }
+                                memo.reset(problem.size << temps.len());
+                                let mut assignment = J1Assignment { problem: &problem, temps: &temps, end, closed, o0, base, memo };
+                                let mut opens = if keep { l.c0 } else { colors & !o0 };
+                                // Zero is the 'full, open nothing' action.
+                                loop {
+                                    let bit = if opens == 0 { 0 } else { opens & opens.wrapping_neg() };
+                                    let o = o0 | bit;
+                                    if assignment.go(nm, o, (1 << temps.len()) - 1, budget) { return true; }
+                                    if keep || opens == 0 { break; }
+                                    opens &= opens - 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                if sub == 0 { break; }
+                sub = (sub - 1) & free;
+            }
+        }
+        false
+    })
+}
+fn j1_exact(s: &State, n: usize) -> u32 {
+    let mut value = jlb(s, n);
+    while !j1_le(s, n, value) { value += 1; }
+    value
+}
+fn use_j1() -> bool {
+    static F: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *F.get_or_init(|| std::env::var("COLORLB_J1").map(|v| v == "1").unwrap_or(false))
+}
+static J1REJECT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+/// J1 を使う子の深さの範囲（COLORLB_J1MIN〜COLORLB_J1MAX、既定は全部）。g は親の深さ。
+pub(crate) fn use_j1g(g: usize) -> bool {
+    static V: std::sync::OnceLock<(usize, usize)> = std::sync::OnceLock::new();
+    let (lo, hi) = *V.get_or_init(|| {
+        let f = |k: &str, d: usize| std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
+        (f("COLORLB_J1MIN", 0), f("COLORLB_J1MAX", usize::MAX))
+    });
+    use_j1() && g + 1 >= lo && g + 1 <= hi
+}
+fn j1_ok(s: &State, n: usize, thr: u32) -> bool {
+    let pass = j1_le(s, n, thr);
+    if !pass { J1REJECT.fetch_add(1, std::sync::atomic::Ordering::Relaxed); }
+    pass
+}
+fn j1_log_suffix() -> String {
+    if use_j1() { format!(" J1 rejected {} aborted {}", J1REJECT.load(std::sync::atomic::Ordering::Relaxed), J1ABORT.load(std::sync::atomic::Ordering::Relaxed)) }
+    else { String::new() }
+}
+fn j1file(n: usize, path: &str) -> std::io::Result<()> {
+    use std::io::{BufRead, BufReader};
+    let (mut count, mut jdiff, mut j1diff) = (0, 0, 0);
+    let mut mismatches = Vec::new();
+    for (line_no, line) in BufReader::new(std::fs::File::open(path)?).lines().enumerate() {
+        let line = line?;
+        if line.trim().is_empty() { continue; }
+        let parse_error = || std::io::Error::new(std::io::ErrorKind::InvalidData, format!("{}:{}: expected d j j1 lane / lane / ...", path, line_no + 1));
+        let mut fields = line.split_whitespace();
+        let mut expected = [0u32; 3];
+        for v in &mut expected { *v = fields.next().and_then(|s| s.parse().ok()).ok_or_else(parse_error)?; }
+        let words: Vec<_> = fields.filter(|&s| s != "/").collect();
+        if words.len() > n + 1 || words.is_empty() { return Err(parse_error()); }
+        let mut s = [0; MAXL];
+        for (i, word) in words.iter().enumerate() {
+            if *word == "." { continue; }
+            if word.len() > n { return Err(parse_error()); }
+            for ch in word.chars() {
+                let c = ch.to_digit(16).filter(|&c| c > 0 && c <= n as u32).ok_or_else(parse_error)?;
+                s[i] = push(s[i], c as u8);
+            }
+        }
+        let s = canon(&s, n + 1);
+        let j = jlb(&s, n);
+        let j1 = j1_exact(&s, n);
+        count += 1;
+        jdiff += (j != expected[1]) as usize;
+        j1diff += (j1 != expected[2]) as usize;
+        if (j != expected[1] || j1 != expected[2]) && mismatches.len() < 10 {
+            mismatches.push(format!("line {}: file J={} J1={}, Rust J={j} J1={j1}: {line}", line_no + 1, expected[1], expected[2]));
+        }
+    }
+    println!("N={n} count={count} J mismatches={jdiff} J1 mismatches={j1diff}");
+    for mismatch in mismatches { println!("{mismatch}"); }
+    Ok(())
+}
+
 /// J は各レーンの（底の色, 底の連続の長さ, その上の色ごとの個数）の多重集合だけで決まる（上の並び順に依らない）。
 /// その「形」を鍵にスレッドごとに覚えておく。
 static JCALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -1246,7 +1719,7 @@ fn prove(n: usize, b: u32) {
             if (late_dprime() && use_dprime()) || use_joint() {
                 part = part.into_par_iter().filter(|k| {
                     let t = unpack(*k, n);
-                    (use_joint() || !(late_dprime() && use_dprime()) || g + h1(&t, n) + d3(&t, n) <= b - 1) && (!use_joint() || j_ok(&t, n, b - 1 - g))
+                    (use_joint() || !(late_dprime() && use_dprime()) || g + h1(&t, n) + d3(&t, n) <= b - 1) && (!use_joint() || (j_ok(&t, n, b - 1 - g) && (!use_j1g(g as usize) || j1_ok(&t, n, b - 1 - g))))
                 }).collect();
             }
             next.append(&mut part);
@@ -1260,7 +1733,7 @@ fn prove(n: usize, b: u32) {
             return;
         }
         total += next.len() as u64;
-        eprintln!("g={g} layer={} total={total} {:.1}s J呼び出し {} 計算 {} 計 {:.1}s 節点 {} 通過 {} {:.1}s 近道 {}", next.len(), t0.elapsed().as_secs_f64(), JLOOK.load(std::sync::atomic::Ordering::Relaxed), JCALLS.load(std::sync::atomic::Ordering::Relaxed), JNANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9, JNODES.load(std::sync::atomic::Ordering::Relaxed), JACC.load(std::sync::atomic::Ordering::Relaxed), JACCNS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9, JQUICK.load(std::sync::atomic::Ordering::Relaxed));
+        eprintln!("g={g} layer={} total={total} {:.1}s J呼び出し {} 計算 {} 計 {:.1}s 節点 {} 通過 {} {:.1}s 近道 {}{}", next.len(), t0.elapsed().as_secs_f64(), JLOOK.load(std::sync::atomic::Ordering::Relaxed), JCALLS.load(std::sync::atomic::Ordering::Relaxed), JNANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9, JNODES.load(std::sync::atomic::Ordering::Relaxed), JACC.load(std::sync::atomic::Ordering::Relaxed), JACCNS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9, JQUICK.load(std::sync::atomic::Ordering::Relaxed), j1_log_suffix());
         if next.is_empty() { break; }
         prev = std::mem::replace(&mut layer, next);
     }
@@ -1391,7 +1864,7 @@ fn prove_w<const W: usize>(n: usize, b: u32) {
             if (late_dprime() && use_dprime()) || use_joint() {
                 part = part.into_par_iter().filter(|k| {
                     let t = unpack_w::<W>(k, n);
-                    (use_joint() || !(late_dprime() && use_dprime()) || g + h1(&t, n) + d3(&t, n) <= b - 1) && (!use_joint() || j_ok(&t, n, b - 1 - g))
+                    (use_joint() || !(late_dprime() && use_dprime()) || g + h1(&t, n) + d3(&t, n) <= b - 1) && (!use_joint() || (j_ok(&t, n, b - 1 - g) && (!use_j1g(g as usize) || j1_ok(&t, n, b - 1 - g))))
                 }).collect();
             }
             next.append(&mut part);
@@ -1405,7 +1878,7 @@ fn prove_w<const W: usize>(n: usize, b: u32) {
             return;
         }
         total += next.len() as u64;
-        eprintln!("g={g} layer={} total={total} {:.1}s J呼び出し {} 計算 {} 計 {:.1}s 節点 {} 通過 {} {:.1}s 近道 {}", next.len(), t0.elapsed().as_secs_f64(), JLOOK.load(std::sync::atomic::Ordering::Relaxed), JCALLS.load(std::sync::atomic::Ordering::Relaxed), JNANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9, JNODES.load(std::sync::atomic::Ordering::Relaxed), JACC.load(std::sync::atomic::Ordering::Relaxed), JACCNS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9, JQUICK.load(std::sync::atomic::Ordering::Relaxed));
+        eprintln!("g={g} layer={} total={total} {:.1}s J呼び出し {} 計算 {} 計 {:.1}s 節点 {} 通過 {} {:.1}s 近道 {}{}", next.len(), t0.elapsed().as_secs_f64(), JLOOK.load(std::sync::atomic::Ordering::Relaxed), JCALLS.load(std::sync::atomic::Ordering::Relaxed), JNANOS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9, JNODES.load(std::sync::atomic::Ordering::Relaxed), JACC.load(std::sync::atomic::Ordering::Relaxed), JACCNS.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1e9, JQUICK.load(std::sync::atomic::Ordering::Relaxed), j1_log_suffix());
         if next.is_empty() { break; }
         prev = std::mem::replace(&mut layer, next);
     }
@@ -1644,6 +2117,37 @@ fn main() {
         "jbeam" => jbeam(n, a[3].parse().unwrap(), a.get(4).map(|x| x.parse().unwrap()).unwrap_or(6)),
         "ropt" => { let st = parse_state(n, &a[3..]); println!("start {}", show(&st, n)); println!("ropt = {}", ropt(n, st)); }
         "opt" => { let st = parse_state(n, &a[3..]); println!("start {}", show(&st, n)); let g = opt(n, st, false); println!("opt = {g}"); }
+        "j1bench" => {
+            // 行: thr レーン… （J1STAT の出力から "J1STAT" と pass/nodes/us を除いたもの）。各行の j1_le の結果と時間を出す。
+            use std::io::BufRead;
+            let f = std::io::BufReader::new(std::fs::File::open(&a[3]).unwrap());
+            let mut tot = 0u128;
+            for line in f.lines() {
+                let line = line.unwrap();
+                let w: Vec<&str> = line.split_whitespace().collect();
+                if w.len() < 2 { continue; }
+                let thr: u32 = w[0].parse().unwrap();
+                let mut s = [0; MAXL];
+                for (i, word) in w[1..].iter().enumerate() {
+                    if *word == "." { continue; }
+                    for ch in word.chars() { s[i] = push(s[i], ch.to_digit(16).unwrap() as u8); }
+                }
+                let s = canon(&s, n + 1);
+                let t0 = std::time::Instant::now();
+                let r = j1_le(&s, n, thr);
+                let us = t0.elapsed().as_micros();
+                tot += us;
+                println!("{} {} {}", thr, r as u8, us);
+            }
+            println!("total_us {}", tot);
+        }
+        "j1file" => {
+            assert!((1..MAXL).contains(&n));
+            if let Err(error) = j1file(n, &a[3]) {
+                eprintln!("j1file failed: {error}");
+                std::process::exit(1);
+            }
+        }
         "jcmp" => {
             // 乱歩の各局面で、形をまとめた J と以前の J が一致するかを数える
             let cnt: usize = a[3].parse().unwrap();
@@ -1696,5 +2200,88 @@ fn main() {
         }
         "prove" => if n <= 6 { prove(n, a[3].parse().unwrap()) } else { prove4(n, a[3].parse().unwrap()) },
         _ => panic!("mode?"),
+    }
+}
+
+#[cfg(test)]
+mod j1_tests {
+    use super::*;
+
+    fn state(n: usize, text: &str) -> State {
+        parse_state(n, &text.split_whitespace().map(String::from).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn python_j1_values_and_thresholds() {
+        // Values from joint.J and jfirst.J1, with L_cur and N_ set explicitly.
+        // Include empty plans, buffers, duplicate uniform colours, and gains.
+        for (n, text, j, j1) in [
+            (3, "111 222 333 .", 0, 0),
+            (3, "123 123 123 .", 10, 10),
+            (3, "321 . 323 121", 8, 9),
+            (3, "131 123 23 2", 8, 9),
+            (3, ". 32 211 .", 3, 3),
+            (4, "1423 14 3312 24 2413", 15, 16),
+            (4, "2213 1334 3412 412 4", 13, 14),
+            (4, "1 2 . 11 33", 1, 1),
+            (5, "12345 12345 12345 12345 12345 .", 33, 33),
+        ] {
+            let s = state(n, text);
+            assert_eq!(jlb(&s, n), j, "J: {text}");
+            assert_eq!(j1_exact(&s, n), j1, "J1: {text}");
+            for thr in (0..=j1 + 2).rev() {
+                assert_eq!(j1_le(&s, n, thr), j1 <= thr, "{text}, thr={thr}");
+            }
+            assert!(j1_le(&s, n, u32::MAX));
+        }
+    }
+
+    #[test]
+    fn upper_order_changes_j1_but_not_j() {
+        let a = state(3, ". 121 123 323");
+        let b = state(3, ". 121 132 323");
+        assert_eq!(jkey(&a, 3), jkey(&b, 3));
+        assert_eq!(jlb(&a, 3), 8);
+        assert_eq!(jlb(&b, 3), 8);
+        // Alternating states also checks that thread-local epochs do not leak.
+        for _ in 0..2 {
+            assert!(!j1_le(&a, 3, 8));
+            assert!(j1_le(&b, 3, 8));
+            assert!(j1_le(&a, 3, 9));
+        }
+    }
+
+    #[test]
+    #[ignore = "individual N=7 early-layer timing; run with --release --nocapture"]
+    fn j1_early_layers_timing() {
+        let n = 7;
+        let mut seen = std::collections::BTreeSet::new();
+        let mut layer = vec![canon(&initial(n), n + 1)];
+        seen.insert(layer[0]);
+        let mut buf = Vec::new();
+        for depth in 0..=5 {
+            let mut next = std::collections::BTreeSet::new();
+            let mut total = 0.0;
+            let mut worst = 0.0f64;
+            for s in &layer {
+                let thr = 70 - depth;
+                let t = std::time::Instant::now();
+                let j = jlb_thr(s, n, thr);
+                let j_ms = t.elapsed().as_secs_f64() * 1000.0;
+                let t = std::time::Instant::now();
+                let pass = j1_le(s, n, thr);
+                let ms = t.elapsed().as_secs_f64() * 1000.0;
+                assert!(!pass || j <= thr);
+                total += ms;
+                worst = worst.max(ms);
+                println!("depth={depth} thr={thr} J_le={} J_ms={j_ms:.3} J1_le={pass} J1_ms={ms:.3} {}", j <= thr, show(s, n));
+                if depth < 5 {
+                    neighbors(s, n, &mut buf);
+                    for s in &buf { if seen.insert(*s) { next.insert(*s); } }
+                }
+            }
+            println!("depth={depth} count={} J1_total_ms={total:.3} J1_max_ms={worst:.3}", layer.len());
+            layer = next.into_iter().collect();
+        }
     }
 }
