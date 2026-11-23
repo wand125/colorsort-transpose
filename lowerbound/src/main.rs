@@ -992,7 +992,10 @@ impl J1Assignment<'_> {
         end
     }
 
-    fn go(&mut self, mask: usize, o: u32, r: usize, budget: u32) -> bool {
+    // sl: penalty still affordable. Every J plan costs at least J(s), so a plan
+    // whose total penalty exceeds thr - J(s) fails anyway; pruning it keeps
+    // every recorded bound true.
+    fn go(&mut self, mask: usize, o: u32, r: usize, budget: u32, sl: u32) -> bool {
         if mask == self.problem.full { return self.end[r] <= budget; }
         if j1_tick() { return true; }
         let key = (((mask << self.problem.n) | o as usize) << self.temps.len()) | r;
@@ -1005,7 +1008,7 @@ impl J1Assignment<'_> {
         let base_key = (mask << self.problem.n) | o as usize;
         // A witnessed J suffix plus a complete end assignment is a J1 plan.
         if self.base.bounds(base_key).1.saturating_add(self.end[r]) <= budget { return true; }
-        if self.end[r] <= budget && self.problem.go(mask, o, budget - self.end[r], self.base) { return true; }
+        if self.end[r] <= sl && self.end[r] <= budget && self.problem.go(mask, o, budget - self.end[r], self.base) { return true; }
         let closed = r & self.closed[o as usize];
         for i in 0..self.problem.lanes.len() {
             if mask >> i & 1 != 0 { continue; }
@@ -1025,32 +1028,35 @@ impl J1Assignment<'_> {
             // A closed temp (colour not yet open) costs 1 here and uses space;
             // leaving it to the end costs at most 1 (free) and never more.
             let avail = r & !closed;
-            for charged in [false, true] {
-                let mut sub = avail;
-                loop {
-                    let count = sub.count_ones() as usize;
-                    let pen = (sub & closed).count_ones() + displacement[count];
-                    if (pen != 0) == charged {
-                        let cost = l.costs[o as usize][1] as u32 + pen;
-                        if l.dirty && o & l.c0 == 0 && cost <= budget && self.go(nm, o | l.c0, r ^ sub, budget - cost) {
-                            self.memo.record(key, budget, true); return true;
-                        }
-                        let cost = l.costs[o as usize][0] as u32 + pen;
-                        if cost <= budget {
-                            let mut rest = ((1u32 << self.problem.n) - 1) & !o;
-                            loop {
-                                let bit = rest & rest.wrapping_neg();
-                                if self.go(nm, o | bit, r ^ sub, budget - cost) {
-                                    self.memo.record(key, budget, true); return true;
-                                }
-                                if rest == 0 { break; }
-                                rest &= rest - 1;
+            // Temps in avail are open now and stay open, so later lanes and the
+            // end see only their count, except homes, where a lower temp never
+            // costs more. Hence placing the top k of avail is optimal for each k,
+            // and k is worth trying only where the next temp would add displacement.
+            let a = avail.count_ones() as usize;
+            let mut sub = 0usize;
+            let mut left = avail;
+            for k in 0..=a {
+                if k == a || displacement[k] < displacement[k + 1] {
+                    let pen = displacement[k];
+                    if pen > sl { break; }
+                    let cost = l.costs[o as usize][1] as u32 + pen;
+                    if l.dirty && o & l.c0 == 0 && cost <= budget && self.go(nm, o | l.c0, r ^ sub, budget - cost, sl - pen) {
+                        self.memo.record(key, budget, true); return true;
+                    }
+                    let cost = l.costs[o as usize][0] as u32 + pen;
+                    if cost <= budget {
+                        let mut rest = ((1u32 << self.problem.n) - 1) & !o;
+                        loop {
+                            let bit = rest & rest.wrapping_neg();
+                            if self.go(nm, o | bit, r ^ sub, budget - cost, sl - pen) {
+                                self.memo.record(key, budget, true); return true;
                             }
+                            if rest == 0 { break; }
+                            rest &= rest - 1;
                         }
                     }
-                    if sub == 0 { break; }
-                    sub = (sub - 1) & avail;
                 }
+                if k < a { let b = left & left.wrapping_neg(); sub |= b; left ^= b; }
             }
         }
         self.memo.record(key, budget, false);
@@ -1073,6 +1079,10 @@ fn j1_tick() -> bool {
     if cap == 0 { if j1_stat() { J1CNT.with(|c| c.set(c.get() + 1)); } return false; }
     J1CNT.with(|c| { let v = c.get() + 1; c.set(v); v > cap })
 }
+fn j1_sl() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("COLORLB_J1SL").is_ok())
+}
 fn j1_stat() -> bool {
     static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *V.get_or_init(|| std::env::var("COLORLB_J1STAT").is_ok())
@@ -1092,6 +1102,9 @@ fn j1_le_inner(s: &State, n: usize, thr: u32) -> bool {
     // Moving every ball in full plans costs at most 2*n*(n+1), and free
     // placements add at most n. Keep budgets small for the u16 memo bounds.
     if thr >= (2 * n * (n + 1) + n) as u32 { return true; }
+    // Slack 0 (J = thr) is the common rejecting case. Asking J <= thr-1 costs
+    // more than the pruning saves (9/117: 647s vs 628s), so it is opt-in.
+    let sl = if j1_sl() && thr > 0 && !jle_cached(s, n, thr - 1) { 0 } else { u32::MAX };
     let mut lanes = Vec::new();
     let mut uni = Vec::new();
     let mut empties = 0;
@@ -1181,6 +1194,20 @@ fn j1_le_inner(s: &State, n: usize, thr: u32) -> bool {
                                 if cost > thr { continue; }
                                 let budget = thr - cost;
                                 let nm = mask | 1 << first;
+                                // Build the temp tables only if some opening passes the J suffix.
+                                let mut good = 0u64; // bit 0: open nothing / keep; bit c+1: open colour c
+                                {
+                                    let mut opens = if keep { l.c0 } else { colors & !o0 };
+                                    loop {
+                                        let bit = if opens == 0 { 0 } else { opens & opens.wrapping_neg() };
+                                        if problem.go(nm, o0 | bit, budget, base) {
+                                            good |= if bit == 0 || keep { 1 } else { 1 << (bit.trailing_zeros() + 1) };
+                                        }
+                                        if keep || opens == 0 { break; }
+                                        opens &= opens - 1;
+                                    }
+                                }
+                                if good == 0 { continue; }
                                 let mut temps = Vec::new();
                                 let mut below = Vec::new();
                                 let mut counts = [0u8; 16];
@@ -1202,7 +1229,8 @@ fn j1_le_inner(s: &State, n: usize, thr: u32) -> bool {
                                 loop {
                                     let bit = if opens == 0 { 0 } else { opens & opens.wrapping_neg() };
                                     let o = o0 | bit;
-                                    if assignment.go(nm, o, (1 << temps.len()) - 1, budget) { return true; }
+                                    let g = if bit == 0 || keep { 1 } else { 1 << (bit.trailing_zeros() + 1) };
+                                    if good & g != 0 && assignment.go(nm, o, (1 << temps.len()) - 1, budget, sl) { return true; }
                                     if keep || opens == 0 { break; }
                                     opens &= opens - 1;
                                 }
