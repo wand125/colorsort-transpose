@@ -810,13 +810,47 @@ fn jlb_ref(s: &State, n: usize) -> u32 {
         best
     })
 }
-/// J1 keeps lane order: unlike J's shape key, top-to-bottom order affects pen.
+// Assignment keeps lane order because top-to-bottom order affects pen.
+// The suffix memo instead uses the shape and colour key from J1Problem.
+#[derive(Default)]
+struct J1Hasher(u64);
+impl std::hash::Hasher for J1Hasher {
+    fn finish(&self) -> u64 { self.0 }
+    fn write(&mut self, bytes: &[u8]) {
+        for &b in bytes { self.write_u64(b as u64); }
+    }
+    fn write_u64(&mut self, value: u64) {
+        self.0 = (self.0.rotate_left(5) ^ value).wrapping_mul(0x517cc1b727220a95);
+    }
+    fn write_usize(&mut self, value: usize) { self.write_u64(value as u64); }
+    fn write_u32(&mut self, value: u32) { self.write_u64(value as u64); }
+    fn write_u16(&mut self, value: u16) { self.write_u64(value as u64); }
+    fn write_u8(&mut self, value: u8) { self.write_u64(value as u64); }
+}
+type J1Map<K, V> = HashMap<K, V, std::hash::BuildHasherDefault<J1Hasher>>;
+
+// Full keys are compared even when their hashes collide. Colour labels stay
+// fixed, except for the proven interchangeable colour classes in open_sets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct J1SharedKey {
+    shapes: [u64; MAXL],
+    o: u16,
+    n: u8,
+}
+const J1_SHARED_LIMIT: usize = 1 << 16;
+
+fn j1_share_min() -> usize {
+    static V: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var("COLORLB_J1SHARE_MIN").ok().and_then(|v| v.parse().ok()).unwrap_or(9))
+}
+
 #[derive(Default)]
 struct J1Memo {
     stamp: Vec<u32>,
     lo: Vec<u16>,
     hi: Vec<u16>,
     epoch: u32,
+    shared: J1Map<J1SharedKey, (u32, u32)>,
 }
 impl J1Memo {
     fn reset(&mut self, size: usize) {
@@ -842,35 +876,182 @@ impl J1Memo {
         if pass { self.hi[key] = self.hi[key].min(budget as u16); }
         else { self.lo[key] = self.lo[key].max((budget + 1) as u16); }
     }
+    fn record_shared(&mut self, key: J1SharedKey, value: u32, pass: bool) {
+        // Clearing before insertion keeps capacity bounded, too (about
+        // 17 MiB on 64-bit targets at the next HashMap capacity boundary).
+        if self.shared.len() >= J1_SHARED_LIMIT { self.shared.clear(); }
+        let v = self.shared.entry(key).or_insert((0, u32::MAX));
+        if pass { v.1 = v.1.min(value); } else { v.0 = v.0.max(value); }
+    }
 }
 struct J1Lane {
     lane: Lane,
     c0: u32,
     run: usize,
     dirty: bool,
+    counts: [u8; 16],
     // [full, keep], indexed by the open colour set (colour c uses bit c-1).
     costs: Vec<[u8; 2]>,
     // [open set][prior openings]: bounds above static movement, and above
     // actual movement, respectively. The latter permits grouping bottom runs.
-    relax: Vec<[[u8; 2]; MAXL]>,
+    relax: Vec<std::cell::OnceCell<[[u8; 2]; MAXL]>>,
+    shape: u64,
+    count_order: [u8; 16],
+}
+impl J1Lane {
+    fn new(lane: Lane, n: usize) -> Self {
+        let ht = height(lane);
+        let c0 = ball(lane, 0);
+        let mut run = 1;
+        while run < ht && ball(lane, run) == c0 { run += 1; }
+        let dirty = run != ht;
+        let mut counts = [0u8; 16];
+        for p in 0..ht { counts[ball(lane, p) as usize - 1] += 1; }
+        let mut costs = vec![[0; 2]; 1 << n];
+        costs[0] = [(2 * ht) as u8, (2 * (ht - run)) as u8];
+        for o in 1usize..1 << n {
+            let c = o.trailing_zeros() as usize;
+            let prev = costs[o & (o - 1)];
+            costs[o] = [prev[0] - counts[c], prev[1] - (counts[c] - if c == c0 as usize - 1 { run as u8 } else { 0 })];
+        }
+        let relax = (0..1usize << n).map(|_| std::cell::OnceCell::new()).collect();
+        let mut count_order = std::array::from_fn(|c| c as u8);
+        count_order.sort_unstable_by_key(|&c| std::cmp::Reverse(counts[c as usize]));
+        let mut shape = (c0 as u64 - 1) | ((run as u64) << 4) | ((dirty as u64) << 8);
+        for c in 0..n { shape |= (counts[c] as u64) << (9 + 4 * c); }
+        Self { lane, c0: 1 << (c0 - 1), run, dirty, counts, costs, relax, shape, count_order }
+    }
+
+    fn relax(&self, o: usize) -> &[[u8; 2]; MAXL] {
+        self.relax[o].get_or_init(|| {
+            let ht = height(self.lane);
+            let c0 = self.c0.trailing_zeros() as usize;
+            let cankeep = self.dirty && o & self.c0 as usize == 0;
+            let movement = ht - if cankeep { self.run } else { 0 };
+            let mut full = [0u8; 16];
+            let mut keep = [0u8; 16];
+            let (mut nf, mut nk) = (0, 0);
+            for &c in &self.count_order {
+                let c = c as usize;
+                if self.counts[c] == 0 { break; }
+                if o >> c & 1 == 0 {
+                    full[nf] = self.counts[c]; nf += 1;
+                    if c != c0 { keep[nk] = self.counts[c]; nk += 1; }
+                }
+            }
+            let (mut sf, mut sk) = (0, 0);
+            let mut relax = [[0; 2]; MAXL];
+            for q in 0..MAXL {
+                let fc = self.costs[o][0] - sf;
+                let kc = self.costs[o][1] - sk;
+                relax[q] = [(if cankeep { fc.min(kc) } else { fc }) - movement as u8,
+                    if cankeep { (fc - ht as u8).min(kc - (ht - self.run) as u8) } else { fc - ht as u8 }];
+                sf += full[q]; sk += keep[q];
+            }
+            relax
+        })
+    }
 }
 struct J1Problem {
     n: usize,
     lanes: Vec<J1Lane>,
     full: usize,
     size: usize,
+    groups: Vec<usize>,
+    shape_masks: Vec<usize>,
+    open_sets: Vec<u32>,
+    classes: Vec<u32>,
+    share_min: usize,
+    share_enabled: bool,
+    remaining: Vec<([u8; 16], [u8; 16])>,
 }
 impl J1Problem {
+    fn new(n: usize, lanes: Vec<J1Lane>) -> Self {
+        let full = (1usize << lanes.len()) - 1;
+        let mut groups: Vec<usize> = Vec::new();
+        for (i, l) in lanes.iter().enumerate() {
+            if let Some(g) = groups.iter_mut().find(|g| {
+                let other = &lanes[g.trailing_zeros() as usize];
+                (l.c0, l.run, l.dirty, l.counts) == (other.c0, other.run, other.dirty, other.counts)
+            }) { *g |= 1 << i; }
+            else { groups.push(1 << i); }
+        }
+        // In each shape group, put the cleared lanes in the lowest positions.
+        // Assignment still uses the original mask and the original lane order.
+        let shape_masks = (0..=full).map(|mask| {
+            let mut canonical = 0;
+            for &g in &groups {
+                let mut bits = g;
+                for _ in 0..(mask & g).count_ones() {
+                    canonical |= bits & bits.wrapping_neg();
+                    bits &= bits - 1;
+                }
+            }
+            canonical
+        }).collect();
+        let mut used = lanes.iter().fold(0, |m, l| m | l.c0);
+        let mut classes = Vec::new();
+        for c in 0..n {
+            if used >> c & 1 != 0 { continue; }
+            let mut m = 1u32 << c;
+            for k in c + 1..n {
+                if used >> k & 1 == 0 && lanes.iter().all(|l| l.counts[c] == l.counts[k]) {
+                    m |= 1 << k;
+                }
+            }
+            used |= m;
+            if m.count_ones() > 1 { classes.push(m); }
+        }
+        let open_sets = (0..1u32 << n).map(|mut o| {
+            for &m in &classes {
+                let mut bits = m;
+                let mut low = 0;
+                for _ in 0..(o & m).count_ones() {
+                    low |= bits & bits.wrapping_neg();
+                    bits &= bits - 1;
+                }
+                o = (o & !m) | low;
+            }
+            o
+        }).collect();
+        let mut remaining = vec![([0u8; 16], [0u8; 16]); full + 1];
+        for mask in (0..full).rev() {
+            let i = (full ^ mask).trailing_zeros() as usize;
+            let l = &lanes[i];
+            let (mut counts, mut keeps) = remaining[mask | 1 << i];
+            for c in 0..n { counts[c] += l.counts[c]; }
+            if l.dirty { keeps[l.c0.trailing_zeros() as usize] += 1; }
+            remaining[mask] = (counts, keeps);
+        }
+        let share_min = j1_share_min();
+        let share_enabled = lanes.len() >= share_min;
+        Self { n, lanes, full, size: (full + 1) << n, groups, shape_masks, open_sets, classes, share_min, share_enabled, remaining }
+    }
+
+    fn suffix_key(&self, mask: usize, o: u32) -> usize {
+        (self.shape_masks[mask] << self.n) | self.open_sets[o as usize] as usize
+    }
+
+    fn shared_key(&self, mask: usize, o: u32) -> J1SharedKey {
+        let mut shapes = [0; MAXL];
+        let mut len = 0;
+        for (i, l) in self.lanes.iter().enumerate() {
+            if mask >> i & 1 == 0 { shapes[len] = l.shape; len += 1; }
+        }
+        shapes[..len].sort_unstable();
+        J1SharedKey { shapes, o: self.open_sets[o as usize] as u16, n: self.n as u8 }
+    }
+
     // Lower bounds allow at most q new colours before position q. Keeping a
     // bottom run can save it only once per colour, even across duplicate lanes.
-    fn lower(&self, mask: usize, o: u32) -> u32 {
+    fn lower(&self, mask: usize, o: u32) -> (u32, u32) {
         let mut movement = 0;
         let mut full = 0;
         let mut savings = [0u32; 16];
         let mut rows = [u32::MAX; MAXL];
         let mut extras = [u32::MAX; MAXL];
         let left = (self.full ^ mask).count_ones() as usize;
-        if left == 0 { return 0; }
+        if left == 0 { return (0, 0); }
         for (i, l) in self.lanes.iter().enumerate() {
             if mask >> i & 1 != 0 { continue; }
             let h = height(l.lane) as u32;
@@ -882,64 +1063,132 @@ impl J1Problem {
                 let c = l.c0.trailing_zeros() as usize;
                 savings[c] = savings[c].max(l.run as u32);
             }
+            let relax = l.relax(o as usize);
             for q in 0..left {
-                let r = l.relax[o as usize][q];
+                let r = relax[q];
                 rows[q] = rows[q].min(r[0] as u32);
                 extras[q] = extras[q].min(r[1] as u32);
             }
         }
-        (movement + rows[..left].iter().sum::<u32>())
-            .max(full - savings.iter().sum::<u32>() + extras[..left].iter().sum::<u32>())
+        ((movement + rows[..left].iter().sum::<u32>())
+            .max(full - savings.iter().sum::<u32>() + extras[..left].iter().sum::<u32>()), movement)
     }
 
-    // J suffix bounds are shared across every home/first-action choice. No
-    // synthetic puzzle state is needed: mask and o describe the suffix itself.
+    // Bounds belong to V(R, o), never to J's cache that minimizes over O0.
     fn go(&self, mask: usize, o: u32, budget: u32, memo: &mut J1Memo) -> bool {
-        if mask == self.full { return true; }
-        if j1_tick() { return true; }
-        let key = (mask << self.n) | o as usize;
-        let (lo, hi) = memo.bounds(key);
+        // Consult the cross-call table only at J1's V entry points, leaving
+        // recursive nodes on the inexpensive, per-problem dense memo.
+        if !self.share_enabled || ((self.full ^ mask).count_ones() as usize) < self.share_min {
+            return self.go_bound(mask, o, budget, memo) <= budget;
+        }
+        let local = self.suffix_key(mask, o);
+        let (lo, hi) = memo.bounds(local);
         if hi <= budget { return true; }
         if lo > budget { return false; }
-        let lower = self.lower(mask, o);
+        let key = self.shared_key(mask, o);
+        if let Some(&(lo, hi)) = memo.shared.get(&key) {
+            if hi < u16::MAX as u32 { memo.record(local, hi, true); }
+            if lo > 0 { memo.record(local, lo - 1, false); }
+            if hi <= budget { return true; }
+            if lo > budget { return false; }
+        }
+        let value = self.go_bound(mask, o, budget, memo);
+        let pass = value <= budget;
+        if j1_cap() == 0 || J1CNT.with(|c| c.get()) <= j1_cap() {
+            memo.record_shared(key, value, pass);
+        }
+        pass
+    }
+
+    // A passing value is a witnessed cost; a failing value is a lower bound.
+    fn go_bound(&self, mask: usize, o: u32, budget: u32, memo: &mut J1Memo) -> u32 {
+        if mask == self.full { return 0; }
+        // Aborted calls are accepted conservatively by j1_le. Do not memoize
+        // their return as a witness (nor propagate it into an ancestor memo).
+        if j1_tick() { return 0; }
+        let mask = self.shape_masks[mask];
+        let o = self.open_sets[o as usize];
+        let key = (mask << self.n) | o as usize;
+        let (lo, hi) = memo.bounds(key);
+        if hi <= budget { return hi; }
+        if lo > budget { return lo; }
+        let (lower, movement) = self.lower(mask, o);
         if lower > budget {
-            memo.record(key, lower - 1, false); return false;
+            memo.record(key, lower - 1, false); return lower;
         }
-        let mut opts = [(0u32, 0usize, 0u32); MAXL * 14];
+        let (call, kc) = &self.remaining[mask];
+        // One integer per option: estimate, opening preference, cost, mask, o.
+        let mut opts = [0u64; MAXL * 14];
         let mut count = 0;
-        for (i, l) in self.lanes.iter().enumerate() {
-            if mask >> i & 1 != 0 { continue; }
-            // Equal complete lanes are interchangeable, including their top
-            // order. This symmetry is also valid for the temp-subset DP.
-            if (0..i).any(|j| mask >> j & 1 == 0 && self.lanes[j].lane == l.lane) { continue; }
+        let mut best = u32::MAX;
+        for &g in &self.groups {
+            let remaining = g & !mask;
+            if remaining == 0 { continue; }
+            let i = remaining.trailing_zeros() as usize;
+            let l = &self.lanes[i];
             let nm = mask | 1 << i;
-            if l.dirty && o & l.c0 == 0 {
-                opts[count] = (l.costs[o as usize][1] as u32, nm, o | l.c0); count += 1;
-            }
+            let keep = l.dirty && o & l.c0 == 0;
+            let hn = movement - (height(l.lane) - if keep { l.run } else { 0 }) as u32;
+            let mut push = |cost: u32, no: u32, preference: u32| {
+                let estimate = cost + hn;
+                if estimate > budget { best = best.min(estimate); }
+                else {
+                    opts[count] = (estimate as u64) << 48 | (preference as u64) << 40
+                        | (cost as u64) << 32 | (nm as u64) << 16 | no as u64;
+                    count += 1;
+                }
+            };
+            if keep { push(l.costs[o as usize][1] as u32, o | l.c0, 0); }
             let cost = l.costs[o as usize][0] as u32;
-            let mut rest = ((1u32 << self.n) - 1) & !o;
-            loop {
+            if cost + hn > budget { best = best.min(cost + hn); continue; }
+            let mut rest = 0u32;
+            let mut kmask = 0u32;
+            let mut cnt = [0u32; 16];
+            for c in 0..self.n {
+                cnt[c] = (call[c] - l.counts[c]) as u32;
+                if cnt[c] > 0 { rest |= 1 << c; }
+                if kc[c] > (l.dirty && l.c0 == 1 << c) as u8 { kmask |= 1 << c; }
+            }
+            rest &= !o;
+            // J's proven dominance applies only inside this suffix search.
+            if keep { rest &= !l.c0; }
+            for &m in &self.classes {
+                let available = rest & m;
+                if available != 0 { rest = (rest & !m) | (available & available.wrapping_neg()); }
+            }
+            if rest & !kmask == 0 && !(keep && l.c0 & kmask == 0) {
+                push(cost, o, 255);
+            }
+            while rest != 0 {
                 let bit = rest & rest.wrapping_neg();
-                opts[count] = (cost, nm, o | bit); count += 1;
-                if rest == 0 { break; }
                 rest &= rest - 1;
+                push(cost, o | bit, 255 - cnt[bit.trailing_zeros() as usize]);
             }
         }
-        opts[..count].sort_unstable_by_key(|&(cost, _, _)| cost);
-        for &(cost, nm, no) in &opts[..count] {
-            if cost <= budget && self.go(nm, no, budget - cost, memo) {
-                memo.record(key, budget, true); return true;
+        opts[..count].sort_unstable();
+        for &opt in &opts[..count] {
+            let cost = ((opt >> 32) & 255) as u32;
+            let nm = ((opt >> 16) & 65535) as usize;
+            let no = (opt & 65535) as u32;
+            let value = cost + self.go_bound(nm, no, budget - cost, memo);
+            if value <= budget {
+                if j1_cap() == 0 || J1CNT.with(|c| c.get()) <= j1_cap() {
+                    memo.record(key, value, true);
+                }
+                return value;
             }
+            best = best.min(value);
         }
-        memo.record(key, budget, false);
-        false
+        best = best.max(lo);
+        memo.record(key, best - 1, false);
+        best
     }
 }
 
 #[derive(Default)]
 struct J1SubsetMemo {
     dense: J1Memo,
-    sparse: HashMap<usize, (u32, u32)>,
+    sparse: J1Map<usize, (u32, u32)>,
     is_dense: bool,
 }
 impl J1SubsetMemo {
@@ -1005,7 +1254,7 @@ impl J1Assignment<'_> {
         if !self.problem.go(mask, o, budget, self.base) {
             self.memo.record(key, budget, false); return false;
         }
-        let base_key = (mask << self.problem.n) | o as usize;
+        let base_key = self.problem.suffix_key(mask, o);
         // A witnessed J suffix plus a complete end assignment is a J1 plan.
         if self.base.bounds(base_key).1.saturating_add(self.end[r]) <= budget { return true; }
         if self.end[r] <= sl && self.end[r] <= budget && self.problem.go(mask, o, budget - self.end[r], self.base) { return true; }
@@ -1111,47 +1360,12 @@ fn j1_le_inner(s: &State, n: usize, thr: u32) -> bool {
     for &lane in &s[..=n] {
         let ht = height(lane);
         if ht == 0 { empties += 1; continue; }
-        let c0 = ball(lane, 0);
-        let mut run = 1;
-        while run < ht && ball(lane, run) == c0 { run += 1; }
-        let dirty = run != ht;
-        if !dirty { uni.push(lanes.len()); }
-        let mut costs = vec![[0; 2]; 1 << n];
-        for (o, cost) in costs.iter_mut().enumerate() {
-            for p in 0..ht {
-                let add = 1 + ((o >> (ball(lane, p) - 1) & 1 == 0) as u8);
-                cost[0] += add;
-                if p >= run { cost[1] += add; }
-            }
-        }
-        let mut relax = vec![[[0; 2]; MAXL]; 1 << n];
-        for o in 0..1usize << n {
-            let cankeep = dirty && o >> (c0 - 1) & 1 == 0;
-            let movement = ht - if cankeep { run } else { 0 };
-            let mut full = [0u8; 16];
-            let mut keep = [0u8; 16];
-            for p in 0..ht {
-                let c = ball(lane, p) as usize - 1;
-                if o >> c & 1 == 0 {
-                    full[c] += 1;
-                    if p >= run && c != c0 as usize - 1 { keep[c] += 1; }
-                }
-            }
-            full.sort_unstable_by(|a, b| b.cmp(a));
-            keep.sort_unstable_by(|a, b| b.cmp(a));
-            let (mut sf, mut sk) = (0, 0);
-            for q in 0..MAXL {
-                let fc = costs[o][0] - sf;
-                let kc = costs[o][1] - sk;
-                relax[o][q] = [(if cankeep { fc.min(kc) } else { fc }) - movement as u8,
-                    if cankeep { (fc - ht as u8).min(kc - (ht - run) as u8) } else { fc - ht as u8 }];
-                sf += full[q]; sk += keep[q];
-            }
-        }
-        lanes.push(J1Lane { lane, c0: 1 << (c0 - 1), run, dirty, costs, relax });
+        let l = J1Lane::new(lane, n);
+        if !l.dirty { uni.push(lanes.len()); }
+        lanes.push(l);
     }
     let full = (1 << lanes.len()) - 1;
-    let problem = J1Problem { n, lanes, full, size: (full + 1) << n };
+    let problem = J1Problem::new(n, lanes);
     thread_local! {
         static J1BUF: std::cell::RefCell<(J1Memo, J1SubsetMemo)> = Default::default();
     }
@@ -2237,6 +2451,160 @@ mod j1_tests {
 
     fn state(n: usize, text: &str) -> State {
         parse_state(n, &text.split_whitespace().map(String::from).collect::<Vec<_>>())
+    }
+
+    // Independent recurrence: lane identities, every full/open-none action,
+    // every colour opening, no shape/symmetry/dominance pruning or bounds.
+    fn suffix_exact(p: &J1Problem, mask: usize, o: u32, memo: &mut [Option<u32>]) -> u32 {
+        if mask == p.full { return 0; }
+        let key = (mask << p.n) | o as usize;
+        if let Some(v) = memo[key] { return v; }
+        let mut best = u32::MAX;
+        for (i, l) in p.lanes.iter().enumerate() {
+            if mask >> i & 1 != 0 { continue; }
+            let nm = mask | 1 << i;
+            if l.dirty && o & l.c0 == 0 {
+                best = best.min(l.costs[o as usize][1] as u32 + suffix_exact(p, nm, o | l.c0, memo));
+            }
+            let cost = l.costs[o as usize][0] as u32;
+            best = best.min(cost + suffix_exact(p, nm, o, memo));
+            for c in 0..p.n {
+                if o >> c & 1 == 0 {
+                    best = best.min(cost + suffix_exact(p, nm, o | 1 << c, memo));
+                }
+            }
+        }
+        memo[key] = Some(best);
+        best
+    }
+
+    fn suffix_problem(n: usize, text: &str) -> J1Problem {
+        let s = state(n, text);
+        J1Problem::new(n, s[..=n].iter().filter(|&&l| l != 0).map(|&l| J1Lane::new(l, n)).collect())
+    }
+
+    #[test]
+    fn suffix_thresholds_and_witnesses_match_unpruned_recurrence() {
+        let mut memo = J1Memo::default();
+        for (n, text) in [
+            (3, "111 222 333 ."),
+            (3, "123 123 123 ."),
+            (3, "131 123 23 2"),
+            (3, "1 2 21 31"),
+            (4, "1234 1243 22 33 ."),
+            (4, "1423 14 3312 24 2413"),
+            (5, "12345 12543 12345 . . ."),
+        ] {
+            let mut p = suffix_problem(n, text);
+            p.share_min = 0;
+            p.share_enabled = true;
+            let mut exact = vec![None; p.size];
+            memo.reset(p.size);
+            // Descending masks visit the same suffix through multiple original
+            // lane identities; descending openings also exercises normalization.
+            for mask in (0..=p.full).rev() {
+                for o in (0..1u32 << n).rev() {
+                    let v = suffix_exact(&p, mask, o, &mut exact);
+                    assert!(p.lower(mask, o).0 <= v, "lower: {text}, {mask}, {o}");
+                    for budget in [v + 2, v.saturating_sub(1), v, 0, v + 1] {
+                        assert_eq!(p.go(mask, o, budget, &mut memo), v <= budget,
+                            "{text}, mask={mask}, o={o}, budget={budget}, exact={v}");
+                        let (lo, hi) = memo.bounds(p.suffix_key(mask, o));
+                        assert!(lo <= v && v <= hi, "invalid bounds: {text}, {mask}, {o}: {lo} <= {v} <= {hi}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn suffix_shared_bounds_survive_new_problem_and_epoch() {
+        let mut p = suffix_problem(5, "12345 12345 12345 12345 12345 .");
+        let mut q = suffix_problem(5, "12543 12435 12534 12453 . .");
+        p.share_min = 0; p.share_enabled = true;
+        q.share_min = 0; q.share_enabled = true;
+        let key = p.shared_key(1, 2);
+        assert_eq!(key, q.shared_key(0, 16));
+        let mut exact = vec![None; p.size];
+        let v = suffix_exact(&p, 1, 2, &mut exact);
+        let mut memo = J1Memo::default();
+        memo.reset(p.size);
+        assert!(!p.go(1, 2, v - 1, &mut memo));
+        assert!(p.go(1, 2, v, &mut memo));
+        assert_eq!(memo.shared[&key], (v, v));
+        memo.reset(q.size);
+        assert!(q.go(0, 16, v, &mut memo));
+        assert!(!q.go(0, 16, v - 1, &mut memo));
+        assert_eq!(memo.bounds(q.suffix_key(0, 16)), (v, v));
+        assert_ne!(key, q.shared_key(0, 1));
+        for text in ["11234 12435 12534 12453 . .", "12345 12435 12534 . . .", "11111 12435 12534 12453 . ."] {
+            assert_ne!(key, suffix_problem(5, text).shared_key(0, 2));
+        }
+    }
+
+    #[test]
+    fn suffix_shared_table_has_bounded_capacity() {
+        let mut memo = J1Memo::default();
+        for i in 0..=J1_SHARED_LIMIT {
+            let mut key = J1SharedKey { shapes: [0; MAXL], o: 0, n: 5 };
+            key.shapes[0] = i as u64;
+            memo.record_shared(key, 7, false);
+        }
+        assert_eq!(memo.shared.len(), 1);
+        assert!(memo.shared.capacity() < 2 * J1_SHARED_LIMIT);
+        assert!(memo.shared.capacity() * (std::mem::size_of::<J1SharedKey>() + 9) < 24 * 1024 * 1024);
+    }
+
+    #[test]
+    fn lane_preparation_matches_direct_ball_calculation() {
+        for (n, text) in [(3, "131 123 23 2"), (5, "11213 55555 52412 1 . .")] {
+            let p = suffix_problem(n, text);
+            for l in &p.lanes {
+                for o in 0..1usize << n {
+                    let mut costs = [0u8; 2];
+                    let mut full = [0u8; 16];
+                    let mut keep = [0u8; 16];
+                    let h = height(l.lane);
+                    for pos in 0..h {
+                        let c = (ball(l.lane, pos) - 1) as usize;
+                        let closed = o >> c & 1 == 0;
+                        costs[0] += 1 + closed as u8;
+                        if pos >= l.run { costs[1] += 1 + closed as u8; }
+                        if closed {
+                            full[c] += 1;
+                            if pos >= l.run && l.c0 != 1 << c { keep[c] += 1; }
+                        }
+                    }
+                    assert_eq!(l.costs[o], costs);
+                    full.sort_unstable_by(|a, b| b.cmp(a));
+                    keep.sort_unstable_by(|a, b| b.cmp(a));
+                    let cankeep = l.dirty && o & l.c0 as usize == 0;
+                    let movement = h - if cankeep { l.run } else { 0 };
+                    for q in 0..MAXL {
+                        let fc = costs[0] - full[..q].iter().sum::<u8>();
+                        let kc = costs[1] - keep[..q].iter().sum::<u8>();
+                        let direct = [(if cankeep { fc.min(kc) } else { fc }) - movement as u8,
+                            if cankeep { (fc - h as u8).min(kc - (h - l.run) as u8) } else { fc - h as u8 }];
+                        assert_eq!(l.relax(o)[q], direct);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn suffix_shape_key_ignores_upper_order_and_symmetric_colour_names() {
+        let p = suffix_problem(5, "12345 12543 12345 . . .");
+        assert_eq!(p.groups.len(), 1);
+        assert_eq!(p.suffix_key(1, 2), p.suffix_key(2, 16));
+        assert_ne!(p.suffix_key(1, 1), p.suffix_key(1, 2));
+        // A closed bottom colour may still be kept. Opening more colours can
+        // increase V, so the suffix must retain the open-nothing action.
+        let p = suffix_problem(3, "122 . . .");
+        let mut memo = J1Memo::default();
+        memo.reset(p.size);
+        assert!(p.go(0, 2, 2, &mut memo));
+        assert!(!p.go(0, 3, 2, &mut memo));
     }
 
     #[test]
