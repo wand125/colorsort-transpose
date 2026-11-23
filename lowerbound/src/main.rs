@@ -899,6 +899,26 @@ struct J1Lane {
     count_order: [u8; 16],
 }
 impl J1Lane {
+    // Keep opens the bottom colour. A full clear may open any closed colour,
+    // including one absent from this lane, or leave the set unchanged.
+    fn openings(&self, keep: bool, closed: u32) -> impl Iterator<Item = u32> {
+        let mut bits = if keep { self.c0 } else { closed };
+        std::iter::from_fn(move || {
+            if bits == 0 { return None; }
+            let bit = bits & bits.wrapping_neg();
+            bits &= bits - 1;
+            Some(bit)
+        }).chain((!keep).then_some(0))
+    }
+
+    fn any_action(&self, o: u32, colors: u32, budget: u32, mut visit: impl FnMut(u32, u32) -> bool) -> bool {
+        let costs = self.costs[o as usize];
+        if self.dirty && o & self.c0 == 0 && costs[1] as u32 <= budget
+            && visit(o | self.c0, budget - costs[1] as u32) { return true; }
+        let Some(left) = budget.checked_sub(costs[0] as u32) else { return false; };
+        self.openings(false, colors & !o).any(|bit| visit(o | bit, left))
+    }
+
     fn new(lane: Lane, n: usize) -> Self {
         let ht = height(lane);
         let c0 = ball(lane, 0);
@@ -958,6 +978,7 @@ struct J1Problem {
     full: usize,
     size: usize,
     groups: Vec<usize>,
+    identical_lanes: Vec<usize>,
     shape_masks: Vec<usize>,
     open_sets: Vec<u32>,
     classes: Vec<u32>,
@@ -969,7 +990,11 @@ impl J1Problem {
     fn new(n: usize, lanes: Vec<J1Lane>) -> Self {
         let full = (1usize << lanes.len()) - 1;
         let mut groups: Vec<usize> = Vec::new();
+        let mut identical_lanes: Vec<usize> = Vec::new();
         for (i, l) in lanes.iter().enumerate() {
+            if let Some(g) = identical_lanes.iter_mut().find(|g| lanes[g.trailing_zeros() as usize].lane == l.lane) {
+                *g |= 1 << i;
+            } else { identical_lanes.push(1 << i); }
             if let Some(g) = groups.iter_mut().find(|g| {
                 let other = &lanes[g.trailing_zeros() as usize];
                 (l.c0, l.run, l.dirty, l.counts) == (other.c0, other.run, other.dirty, other.counts)
@@ -978,17 +1003,20 @@ impl J1Problem {
         }
         // In each shape group, put the cleared lanes in the lowest positions.
         // Assignment still uses the original mask and the original lane order.
-        let shape_masks = (0..=full).map(|mask| {
-            let mut canonical = 0;
-            for &g in &groups {
-                let mut bits = g;
-                for _ in 0..(mask & g).count_ones() {
-                    canonical |= bits & bits.wrapping_neg();
-                    bits &= bits - 1;
-                }
+        let mut group_of = [0; MAXL];
+        for &g in &groups {
+            let mut bits = g;
+            while bits != 0 {
+                group_of[bits.trailing_zeros() as usize] = g;
+                bits &= bits - 1;
             }
-            canonical
-        }).collect();
+        }
+        let mut shape_masks = vec![0; full + 1];
+        for mask in 1..=full {
+            let prev = shape_masks[mask & (mask - 1)];
+            let available = group_of[mask.trailing_zeros() as usize] & !prev;
+            shape_masks[mask] = prev | (available & available.wrapping_neg());
+        }
         let mut used = lanes.iter().fold(0, |m, l| m | l.c0);
         let mut classes = Vec::new();
         for c in 0..n {
@@ -1019,13 +1047,24 @@ impl J1Problem {
             let i = (full ^ mask).trailing_zeros() as usize;
             let l = &lanes[i];
             let (mut counts, mut keeps) = remaining[mask | 1 << i];
-            for c in 0..n { counts[c] += l.counts[c]; }
+            for (count, add) in counts.iter_mut().zip(l.counts) { *count += add; }
             if l.dirty { keeps[l.c0.trailing_zeros() as usize] += 1; }
             remaining[mask] = (counts, keeps);
         }
         let share_min = j1_share_min();
         let share_enabled = lanes.len() >= share_min;
-        Self { n, lanes, full, size: (full + 1) << n, groups, shape_masks, open_sets, classes, share_min, share_enabled, remaining }
+        Self { n, lanes, full, size: (full + 1) << n, groups, identical_lanes, shape_masks, open_sets, classes, share_min, share_enabled, remaining }
+    }
+
+    // Displacement depends on the order of the balls. Only identical lanes
+    // are interchangeable during assignment or when choosing the first lane.
+    fn distinct_lanes(&self, mask: usize) -> impl Iterator<Item = (usize, &J1Lane)> {
+        self.identical_lanes.iter().filter_map(move |g| {
+            let rest = g & !mask;
+            if rest == 0 { return None; }
+            let i = rest.trailing_zeros() as usize;
+            Some((i, &self.lanes[i]))
+        })
     }
 
     fn suffix_key(&self, mask: usize, o: u32) -> usize {
@@ -1048,8 +1087,7 @@ impl J1Problem {
         let mut movement = 0;
         let mut full = 0;
         let mut savings = [0u32; 16];
-        let mut rows = [u32::MAX; MAXL];
-        let mut extras = [u32::MAX; MAXL];
+        let mut minima = [[u8::MAX; 2]; MAXL];
         let left = (self.full ^ mask).count_ones() as usize;
         if left == 0 { return (0, 0); }
         for (i, l) in self.lanes.iter().enumerate() {
@@ -1063,15 +1101,14 @@ impl J1Problem {
                 let c = l.c0.trailing_zeros() as usize;
                 savings[c] = savings[c].max(l.run as u32);
             }
-            let relax = l.relax(o as usize);
-            for q in 0..left {
-                let r = relax[q];
-                rows[q] = rows[q].min(r[0] as u32);
-                extras[q] = extras[q].min(r[1] as u32);
+            for (m, r) in minima.iter_mut().zip(l.relax(o as usize)) {
+                m[0] = m[0].min(r[0]);
+                m[1] = m[1].min(r[1]);
             }
         }
-        ((movement + rows[..left].iter().sum::<u32>())
-            .max(full - savings.iter().sum::<u32>() + extras[..left].iter().sum::<u32>()), movement)
+        let rows: u32 = minima[..left].iter().map(|m| m[0] as u32).sum();
+        let extras: u32 = minima[..left].iter().map(|m| m[1] as u32).sum();
+        ((movement + rows).max(full - savings.iter().sum::<u32>() + extras), movement)
     }
 
     // Bounds belong to V(R, o), never to J's cache that minimizes over O0.
@@ -1211,19 +1248,41 @@ impl J1SubsetMemo {
         }
     }
 }
-struct J1Assignment<'a> {
-    problem: &'a J1Problem,
-    // Bit positions retain top-down order for the first-use home penalty.
-    temps: &'a [u8],
-    end: Vec<u32>,
-    closed: Vec<usize>,
-    o0: u32,
-    base: &'a mut J1Memo,
-    memo: &'a mut J1SubsetMemo,
+// Bit 0 is the highest temporary ball. below[t][c] counts moved balls
+// of home colour c strictly below t, excluding a kept bottom run.
+struct J1Temps {
+    len: usize,
+    positions: [usize; 16],
+    below: [[u8; 16]; MAXL],
 }
-impl J1Assignment<'_> {
-    fn end_cost(temps: &[u8], below: &[[u8; 16]], homes: &[(u8, usize)], buffer: usize) -> Vec<u32> {
-        let size = 1usize << temps.len();
+impl J1Temps {
+    fn new(l: &J1Lane, o0: u32, keep: bool) -> Self {
+        let mut t = Self { len: 0, positions: [0; 16], below: [[0; 16]; MAXL] };
+        let mut counts = l.counts;
+        let start = if keep { l.run } else { 0 };
+        counts[l.c0.trailing_zeros() as usize] -= start as u8;
+        for p in (start..height(l.lane)).rev() {
+            let c = (ball(l.lane, p) - 1) as usize;
+            counts[c] -= 1;
+            if o0 >> c & 1 == 0 {
+                t.below[t.len] = counts;
+                t.positions[c] |= 1 << t.len;
+                t.len += 1;
+            }
+        }
+        t
+    }
+
+    fn open_positions(&self, n: usize) -> Vec<usize> {
+        let mut open = vec![0; 1 << n];
+        for o in 1..open.len() {
+            open[o] = open[o & (o - 1)] | self.positions[o.trailing_zeros() as usize];
+        }
+        open
+    }
+
+    fn end_cost(&self, homes: &[(u8, usize)], buffer: usize) -> Vec<u32> {
+        let size = 1usize << self.len;
         let mut end: Vec<u32> = (0..size).map(|r| (r.count_ones() as usize).saturating_sub(buffer) as u32).collect();
         for &(c, cap) in homes {
             let old = end.clone();
@@ -1232,7 +1291,7 @@ impl J1Assignment<'_> {
                 while sub != 0 {
                     if sub.count_ones() as usize <= cap {
                         // First temp on this home is the highest selected one.
-                        *value = (*value).min(old[r ^ sub] + below[sub.trailing_zeros() as usize][c as usize] as u32);
+                        *value = (*value).min(old[r ^ sub] + self.below[sub.trailing_zeros() as usize][c as usize] as u32);
                     }
                     sub = (sub - 1) & r;
                 }
@@ -1241,68 +1300,121 @@ impl J1Assignment<'_> {
         end
     }
 
-    // sl: penalty still affordable. Every J plan costs at least J(s), so a plan
-    // whose total penalty exceeds thr - J(s) fails anyway; pruning it keeps
-    // every recorded bound true.
-    fn go(&mut self, mask: usize, o: u32, r: usize, budget: u32, sl: u32) -> bool {
-        if mask == self.problem.full { return self.end[r] <= budget; }
+    fn zero_capacity(&self, homes: &[(u8, usize)], buffer: usize) -> [usize; MAXL] {
+        let mut capacity = [buffer; MAXL];
+        for (t, cap) in capacity[..self.len].iter_mut().enumerate() {
+            for &(c, slots) in homes {
+                if self.below[t][c as usize] == 0 { *cap += slots; }
+            }
+        }
+        capacity
+    }
+}
+
+fn j1_fits_zero(mut r: usize, capacity: &[usize; MAXL]) -> bool {
+    // A home charges below[highest assigned temp][home colour] once.
+    // Its zero-cost positions form a suffix, so previously used slots
+    // are also eligible for the next ball. Each prefix must fit.
+    let mut used = 0;
+    while r != 0 {
+        used += 1;
+        if used > capacity[r.trailing_zeros() as usize] { return false; }
+        r &= r - 1;
+    }
+    true
+}
+
+struct J1Assignment<'a> {
+    problem: &'a J1Problem,
+    temps: &'a J1Temps,
+    open: Vec<usize>,
+    o0: u32,
+    base: &'a mut J1Memo,
+    memo: &'a mut J1SubsetMemo,
+}
+impl J1Assignment<'_> {
+    fn key(&self, mask: usize, o: u32, r: usize) -> usize {
+        (((mask << self.problem.n) | o as usize) << self.temps.len) | r
+    }
+
+    fn go_zero(&mut self, mask: usize, o: u32, r: usize, budget: u32, capacity: &[usize; MAXL]) -> bool {
+        let problem = self.problem;
+        if j1_fits_zero(r, capacity) { return problem.go(mask, o, budget, self.base); }
+        if mask == problem.full { return false; }
         if j1_tick() { return true; }
-        let key = (((mask << self.problem.n) | o as usize) << self.temps.len()) | r;
+        let key = self.key(mask, o, r);
+        if self.memo.bounds(key).0 > budget || !problem.go(mask, o, budget, self.base) { return false; }
+        let avail = r & self.open[o as usize];
+        let colors = (1 << problem.n) - 1;
+        for (i, l) in problem.distinct_lanes(mask) {
+            // Place the highest eligible balls in the empty slots and then
+            // displace from the top until the first ball with a positive cost.
+            let mut left = avail;
+            let h = height(l.lane);
+            for _ in 0..problem.n - h {
+                if left == 0 { break; }
+                left &= left - 1;
+            }
+            for p in (0..h).rev() {
+                if left == 0 || o & !self.o0 & (1 << (ball(l.lane, p) - 1)) != 0 { break; }
+                left &= left - 1;
+            }
+            let nr = (r ^ avail) | left;
+            if l.any_action(o, colors, budget, |no, b| self.go_zero(mask | 1 << i, no, nr, b, capacity)) {
+                return true;
+            }
+        }
+        // The same state can be reached with a different remaining J budget.
+        self.memo.record(key, budget, false);
+        false
+    }
+
+    fn go(&mut self, mask: usize, o: u32, r: usize, budget: u32, pen_unpaid: bool, end: &[u32]) -> bool {
+        // Before the first penalty, reserve one unit to enforce J <= thr-1.
+        // After a payment the total budget already implies that constraint.
+        let Some(j_budget) = budget.checked_sub(pen_unpaid as u32) else { return false; };
+        if mask == self.problem.full { return end[r] <= budget; }
+        if j1_tick() { return true; }
+        let key = self.key(mask, o, r) * 2 + pen_unpaid as usize;
         let (lo, hi) = self.memo.bounds(key);
         if hi <= budget { return true; }
         if lo > budget { return false; }
-        if !self.problem.go(mask, o, budget, self.base) {
+        if !self.problem.go(mask, o, j_budget, self.base) {
             self.memo.record(key, budget, false); return false;
         }
-        let base_key = self.problem.suffix_key(mask, o);
-        // A witnessed J suffix plus a complete end assignment is a J1 plan.
-        if self.base.bounds(base_key).1.saturating_add(self.end[r]) <= budget { return true; }
-        if self.end[r] <= sl && self.end[r] <= budget && self.problem.go(mask, o, budget - self.end[r], self.base) { return true; }
-        let closed = r & self.closed[o as usize];
-        for i in 0..self.problem.lanes.len() {
-            if mask >> i & 1 != 0 { continue; }
-            let l = &self.problem.lanes[i];
-            if (0..i).any(|j| mask >> j & 1 == 0 && self.problem.lanes[j].lane == l.lane) { continue; }
+        let problem = self.problem;
+        if end[r] <= budget {
+            let end_budget = j_budget.min(budget - end[r]);
+            if end_budget == j_budget || problem.go(mask, o, end_budget, self.base) { return true; }
+        }
+        let avail = r & self.open[o as usize];
+        let a = avail.count_ones() as usize;
+        let colors = (1 << problem.n) - 1;
+        for (i, l) in problem.distinct_lanes(mask) {
             let h = height(l.lane);
             let mut displacement = [0u32; MAXL + 1];
-            for count in 1..=self.temps.len() {
-                let need = count.saturating_sub(self.problem.n - h);
+            for count in 1..=a {
+                let need = count.saturating_sub(problem.n - h);
                 displacement[count] = if need == 0 { 0 } else {
                     displacement[count - 1] + ((o & !self.o0 & (1 << (ball(l.lane, h - need) - 1)) != 0) as u32)
                 };
             }
             let nm = mask | 1 << i;
-            // Try free placements first, then all other subsets. No dominance
-            // discards temp positions: those positions still affect end[r].
             // A closed temp (colour not yet open) costs 1 here and uses space;
-            // leaving it to the end costs at most 1 (free) and never more.
-            let avail = r & !closed;
+            // leaving it to the end costs at most 1.
             // Temps in avail are open now and stay open, so later lanes and the
             // end see only their count, except homes, where a lower temp never
             // costs more. Hence placing the top k of avail is optimal for each k,
             // and k is worth trying only where the next temp would add displacement.
-            let a = avail.count_ones() as usize;
             let mut sub = 0usize;
             let mut left = avail;
             for k in 0..=a {
                 if k == a || displacement[k] < displacement[k + 1] {
                     let pen = displacement[k];
-                    if pen > sl { break; }
-                    let cost = l.costs[o as usize][1] as u32 + pen;
-                    if l.dirty && o & l.c0 == 0 && cost <= budget && self.go(nm, o | l.c0, r ^ sub, budget - cost, sl - pen) {
+                    let Some(left_budget) = budget.checked_sub(pen) else { break; };
+                    if l.any_action(o, colors, left_budget, |no, b|
+                        self.go(nm, no, r ^ sub, b, pen_unpaid && pen == 0, end)) {
                         self.memo.record(key, budget, true); return true;
-                    }
-                    let cost = l.costs[o as usize][0] as u32 + pen;
-                    if cost <= budget {
-                        let mut rest = ((1u32 << self.problem.n) - 1) & !o;
-                        loop {
-                            let bit = rest & rest.wrapping_neg();
-                            if self.go(nm, o | bit, r ^ sub, budget - cost, sl - pen) {
-                                self.memo.record(key, budget, true); return true;
-                            }
-                            if rest == 0 { break; }
-                            rest &= rest - 1;
-                        }
                     }
                 }
                 if k < a { let b = left & left.wrapping_neg(); sub |= b; left ^= b; }
@@ -1313,8 +1425,6 @@ impl J1Assignment<'_> {
     }
 }
 
-/// Exactly jfirst.J1 <= thr. No J dominance rules are applied to home choices
-/// or the first action: those choices also determine the temporary slots.
 // J1 の 1 回の計算の節点の上限（COLORLB_J1NODES、0 で無制限）。超えたら「落とせない」として通す（通すのは常に安全）。
 thread_local! { static J1CNT: std::cell::Cell<u64> = const { std::cell::Cell::new(0) }; }
 static J1ABORT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -1328,9 +1438,9 @@ fn j1_tick() -> bool {
     if cap == 0 { if j1_stat() { J1CNT.with(|c| c.set(c.get() + 1)); } return false; }
     J1CNT.with(|c| { let v = c.get() + 1; c.set(v); v > cap })
 }
-fn j1_sl() -> bool {
-    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *V.get_or_init(|| std::env::var("COLORLB_J1SL").is_ok())
+fn j1_phase_counts() -> Option<&'static [std::sync::atomic::AtomicU64; 2]> {
+    static COUNTS: std::sync::OnceLock<Option<[std::sync::atomic::AtomicU64; 2]>> = std::sync::OnceLock::new();
+    COUNTS.get_or_init(|| std::env::var_os("COLORLB_J1PHASES").map(|_| Default::default())).as_ref()
 }
 fn j1_stat() -> bool {
     static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -1347,106 +1457,77 @@ fn j1_le(s: &State, n: usize, thr: u32) -> bool {
     if j1_cap() > 0 && J1CNT.with(|c| c.get()) > j1_cap() { J1ABORT.fetch_add(1, std::sync::atomic::Ordering::Relaxed); return true; }
     r
 }
-fn j1_le_inner(s: &State, n: usize, thr: u32) -> bool {
-    // Moving every ball in full plans costs at most 2*n*(n+1), and free
-    // placements add at most n. Keep budgets small for the u16 memo bounds.
-    if thr >= (2 * n * (n + 1) + n) as u32 { return true; }
-    // Slack 0 (J = thr) is the common rejecting case. Asking J <= thr-1 costs
-    // more than the pruning saves (9/117: 647s vs 628s), so it is opt-in.
-    let sl = if j1_sl() && thr > 0 && !jle_cached(s, n, thr - 1) { 0 } else { u32::MAX };
-    let mut lanes = Vec::new();
-    let mut uni = Vec::new();
-    let mut empties = 0;
-    for &lane in &s[..=n] {
-        let ht = height(lane);
-        if ht == 0 { empties += 1; continue; }
-        let l = J1Lane::new(lane, n);
-        if !l.dirty { uni.push(lanes.len()); }
-        lanes.push(l);
+struct J1Homes {
+    kept: usize,
+    open: u32,
+    slots: Vec<(u8, usize)>,
+    buffer: usize,
+}
+
+impl J1Problem {
+    fn first_plan<const ZERO: bool>(&self, first: usize, keep: bool, homes: &J1Homes,
+        j_limit: u32, base: &mut J1Memo, memo: &mut J1SubsetMemo) -> bool {
+        let o0 = homes.open;
+        let l = &self.lanes[first];
+        let cost = l.costs[o0 as usize][keep as usize] as u32;
+        let Some(j_budget) = j_limit.checked_sub(cost) else { return false; };
+        let nm = homes.kept | 1 << first;
+        let mut opens = l.openings(keep, ((1 << self.n) - 1) & !o0);
+        // Delay placement tables until a J suffix passes. Later openings can
+        // consult the same V memo inside the assignment search.
+        let Some(bit) = opens.find(|&bit| self.go(nm, o0 | bit, j_budget, base)) else { return false; };
+        let mut opens = std::iter::once(bit).chain(opens);
+        let temps = J1Temps::new(l, o0, keep);
+        let r = (1 << temps.len) - 1;
+        let capacity = if ZERO { temps.zero_capacity(&homes.slots, homes.buffer) } else { [0; MAXL] };
+        if ZERO && j1_fits_zero(r, &capacity) { return true; }
+        let open = temps.open_positions(self.n);
+        memo.reset(self.size << (temps.len + (!ZERO) as usize));
+        let mut assignment = J1Assignment { problem: self, temps: &temps, open, o0, base, memo };
+        if ZERO {
+            opens.any(|bit| assignment.go_zero(nm, o0 | bit, r, j_budget, &capacity))
+        } else {
+            let end = temps.end_cost(&homes.slots, homes.buffer);
+            // The first move has paid no penalty. Its total budget still
+            // includes the unit reserved by the J limit.
+            opens.any(|bit| assignment.go(nm, o0 | bit, r, j_budget + 1, true, &end))
+        }
     }
-    let full = (1 << lanes.len()) - 1;
-    let problem = J1Problem::new(n, lanes);
-    thread_local! {
-        static J1BUF: std::cell::RefCell<(J1Memo, J1SubsetMemo)> = Default::default();
-    }
-    J1BUF.with(|cell| {
-        let mut guard = cell.borrow_mut();
-        let (base, memo) = &mut *guard;
-        base.reset(problem.size);
-        let colors = (1u32 << n) - 1;
-        for kept in 0usize..1 << uni.len() {
+
+    fn has_plan<const ZERO: bool>(&self, uni: &[usize], empties: usize, thr: u32,
+        base: &mut J1Memo, memo: &mut J1SubsetMemo) -> bool {
+        let Some(j_limit) = thr.checked_sub((!ZERO) as u32) else { return false; };
+        let n = self.n;
+        let colors = (1 << n) - 1;
+        for kept in (0usize..1 << uni.len()).rev() {
             let mut mask = 0;
             let mut o_kept = 0;
             let mut homes_kept = Vec::new();
             let mut valid = true;
             for (u, &j) in uni.iter().enumerate() {
                 if kept >> u & 1 == 0 { continue; }
-                let l = &problem.lanes[j];
+                let l = &self.lanes[j];
                 if o_kept & l.c0 != 0 { valid = false; break; }
                 mask |= 1 << j;
                 o_kept |= l.c0;
                 if height(l.lane) < n { homes_kept.push((ball(l.lane, 0) - 1, n - height(l.lane))); }
             }
             if !valid { continue; }
-            if mask == full { return true; }
+            if mask == self.full { return true; }
             let free = colors & !o_kept;
-            let mut sub = free;
+            let mut sub = if empties == 0 { 0 } else { free };
             loop {
                 let k = sub.count_ones() as usize;
                 if k <= empties {
                     let o0 = o_kept | sub;
-                    if problem.go(mask, o0, thr, base) {
-                        let buffer = n * (empties - k);
-                        let mut homes = homes_kept.clone();
-                        for c in 0..n { if sub >> c & 1 != 0 { homes.push((c as u8, n)); } }
-                        for (first, l) in problem.lanes.iter().enumerate() {
-                            if mask >> first & 1 != 0 { continue; }
-                            if (0..first).any(|j| mask >> j & 1 == 0 && problem.lanes[j].lane == l.lane) { continue; }
+                    if self.go(mask, o0, j_limit, base) {
+                        let mut homes = J1Homes { kept: mask, open: o0, slots: homes_kept.clone(), buffer: n * (empties - k) };
+                        for c in 0..n { if sub >> c & 1 != 0 { homes.slots.push((c as u8, n)); } }
+                        for (first, l) in self.distinct_lanes(mask) {
                             for keep in [true, false] {
                                 if keep && (!l.dirty || o0 & l.c0 != 0) { continue; }
-                                let cost = l.costs[o0 as usize][keep as usize] as u32;
-                                if cost > thr { continue; }
-                                let budget = thr - cost;
-                                let nm = mask | 1 << first;
-                                // Build the temp tables only if some opening passes the J suffix.
-                                let mut good = 0u64; // bit 0: open nothing / keep; bit c+1: open colour c
-                                {
-                                    let mut opens = if keep { l.c0 } else { colors & !o0 };
-                                    loop {
-                                        let bit = if opens == 0 { 0 } else { opens & opens.wrapping_neg() };
-                                        if problem.go(nm, o0 | bit, budget, base) {
-                                            good |= if bit == 0 || keep { 1 } else { 1 << (bit.trailing_zeros() + 1) };
-                                        }
-                                        if keep || opens == 0 { break; }
-                                        opens &= opens - 1;
-                                    }
-                                }
-                                if good == 0 { continue; }
-                                let mut temps = Vec::new();
-                                let mut below = Vec::new();
-                                let mut counts = [0u8; 16];
-                                for p in (if keep { l.run } else { 0 })..height(l.lane) {
-                                    let c = ball(l.lane, p) - 1;
-                                    if o0 >> c & 1 != 0 { counts[c as usize] += 1; }
-                                    else { temps.push(c); below.push(counts); }
-                                }
-                                temps.reverse(); below.reverse();
-                                let end = J1Assignment::end_cost(&temps, &below, &homes, buffer);
-                                let mut closed = vec![0; 1 << n];
-                                for (o, xs) in closed.iter_mut().enumerate() {
-                                    for (i, &c) in temps.iter().enumerate() { if o >> c & 1 == 0 { *xs |= 1 << i; } }
-                                }
-                                memo.reset(problem.size << temps.len());
-                                let mut assignment = J1Assignment { problem: &problem, temps: &temps, end, closed, o0, base, memo };
-                                let mut opens = if keep { l.c0 } else { colors & !o0 };
-                                // Zero is the 'full, open nothing' action.
-                                loop {
-                                    let bit = if opens == 0 { 0 } else { opens & opens.wrapping_neg() };
-                                    let o = o0 | bit;
-                                    let g = if bit == 0 || keep { 1 } else { 1 << (bit.trailing_zeros() + 1) };
-                                    if good & g != 0 && assignment.go(nm, o, (1 << temps.len()) - 1, budget, sl) { return true; }
-                                    if keep || opens == 0 { break; }
-                                    opens &= opens - 1;
+                                if self.first_plan::<ZERO>(first, keep, &homes, j_limit, base, memo) {
+                                    return true;
                                 }
                             }
                         }
@@ -1457,6 +1538,36 @@ fn j1_le_inner(s: &State, n: usize, thr: u32) -> bool {
             }
         }
         false
+    }
+}
+
+fn j1_le_inner(s: &State, n: usize, thr: u32) -> bool {
+    // Moving every ball in full plans costs at most 2*n*(n+1), and assigning
+    // all temporaries to nowhere adds at most n. Keep memo budgets in u16.
+    if thr >= (2 * n * (n + 1) + n) as u32 { return true; }
+    let mut lanes = Vec::new();
+    let mut uni = Vec::new();
+    let mut empties = 0;
+    for &lane in &s[..=n] {
+        if lane == 0 { empties += 1; continue; }
+        let l = J1Lane::new(lane, n);
+        if !l.dirty { uni.push(lanes.len()); }
+        lanes.push(l);
+    }
+    let problem = J1Problem::new(n, lanes);
+    thread_local! {
+        static J1BUF: std::cell::RefCell<(J1Memo, J1SubsetMemo)> = Default::default();
+    }
+    J1BUF.with(|cell| {
+        let (base, memo) = &mut *cell.borrow_mut();
+        base.reset(problem.size);
+        let zero = problem.has_plan::<true>(&uni, empties, thr, base, memo);
+        if let Some(counts) = j1_phase_counts() {
+            if !zero || j1_cap() == 0 || J1CNT.with(|c| c.get()) <= j1_cap() {
+                counts[(!zero) as usize].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+        zero || problem.has_plan::<false>(&uni, empties, thr, base, memo)
     })
 }
 fn j1_exact(s: &State, n: usize) -> u32 {
@@ -2443,6 +2554,10 @@ fn main() {
         "prove" => if n <= 6 { prove(n, a[3].parse().unwrap()) } else { prove4(n, a[3].parse().unwrap()) },
         _ => panic!("mode?"),
     }
+    if let Some([a, b]) = j1_phase_counts() {
+        use std::sync::atomic::Ordering::Relaxed;
+        eprintln!("J1PHASES A={} B={}", a.load(Relaxed), b.load(Relaxed));
+    }
 }
 
 #[cfg(test)]
@@ -2481,6 +2596,61 @@ mod j1_tests {
     fn suffix_problem(n: usize, text: &str) -> J1Problem {
         let s = state(n, text);
         J1Problem::new(n, s[..=n].iter().filter(|&&l| l != 0).map(|&l| J1Lane::new(l, n)).collect())
+    }
+
+    #[test]
+    fn zero_capacity_matches_subset_cost_for_every_remaining_set() {
+        let p = suffix_problem(6, "314213 . . . . . .");
+        let l = &p.lanes[0];
+        let full = J1Temps::new(l, 0b11, false);
+        assert_eq!(full.len, 3);
+        assert_eq!(&full.below[0][..2], &[2, 1]);
+        assert_eq!(&full.below[1][..2], &[1, 0]);
+        assert_eq!(&full.below[2][..2], &[0, 0]);
+        let capacity = full.zero_capacity(&[(0, 2), (1, 1)], 0);
+        assert_eq!(&capacity[..3], &[0, 1, 3]);
+        assert!(!j1_fits_zero(0b111, &capacity));
+        assert!(j1_fits_zero(0b110, &capacity));
+
+        for keep in [false, true] {
+            let temps = J1Temps::new(l, 0b11, keep);
+            for buffer in 0..=3 {
+                for cap1 in 0..=3 {
+                    for cap2 in 0..=3 {
+                        let homes = [(0, cap1), (1, cap2)];
+                        let capacity = temps.zero_capacity(&homes, buffer);
+                        for (r, cost) in temps.end_cost(&homes, buffer).into_iter().enumerate() {
+                            assert_eq!(j1_fits_zero(r, &capacity), cost == 0, "{keep} {buffer} {homes:?} {r}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn general_budget_distinguishes_unpaid_and_paid_penalty() {
+        // Keeping 112 with colour 2 open costs one J move. Two temporary 2s
+        // can both go here for one displacement, or go nowhere for two.
+        let p = suffix_problem(3, "112 . . .");
+        let first = suffix_problem(3, "22 . . .");
+        let temps = J1Temps::new(&first.lanes[0], 0, false);
+        let end = temps.end_cost(&[], 0);
+        let mut base = J1Memo::default();
+        let mut memo = J1SubsetMemo::default();
+        base.reset(p.size);
+        for unpaid_first in [true, false] {
+            memo.reset(p.size << (temps.len + 1));
+            let mut a = J1Assignment { problem: &p, temps: &temps, open: temps.open_positions(p.n),
+                o0: 0, base: &mut base, memo: &mut memo };
+            for unpaid in [unpaid_first, !unpaid_first] {
+                assert_eq!(a.go(0, 2, 0, 1, unpaid, &end), !unpaid);
+                assert_eq!(a.go(p.full, 2, 0, 0, unpaid, &end), !unpaid);
+            }
+            assert!(a.go(0, 2, 0b11, 2, true, &end));
+            assert!(!a.go(0, 2, 0b11, 1, true, &end));
+            assert!(a.go(p.full, 2, 0b01, 1, true, &end));
+        }
     }
 
     #[test]
