@@ -4,7 +4,7 @@ N	lower	lower_basis	upper	upper_source	solution
 4	21	全探索で確定（BFS/IDA*）	21	全探索で確定	solutions/best.tsv
 5	36	全探索で確定（BFS/IDA*）	36	全探索で確定	solutions/best.tsv
 6	55	枝刈り全探索 prove 6 55（下界 J、471 万状態）で確定	55	自作: r1r2（確定）	solutions/best.tsv
-7	76	枝刈り全探索 prove 7 76（下界 J、ディスク版、203633 万状態）	78	自作: colorsort3 window=6	solutions/best.tsv
+7	77	枝刈り全探索 prove 7 77（下界 J・J1、ディスク版、491341 万状態）	78	自作: colorsort3 window=6	solutions/best.tsv
 8	95	枝刈り全探索 prove 8 95（下界 J、5311 万状態）	106	既知: Docs 付録 A（既知、未確定）	solutions/docs_known.tsv
 9	119	枝刈り全探索 prove 9 119（下界 J、ディスク版、29,187,284 状態）	139	自作: 注ぎ単位のビーム（pour.rs、幅 10⁶）	solutions/best.tsv
 10	145	枝刈り全探索 prove 10 145（下界 J、1,115,978 状態）	177	自作: 注ぎ単位のビーム（beamM）の手順を、60 手の区間ごとにビームで解き直したもの（wscan）	solutions/best.tsv
